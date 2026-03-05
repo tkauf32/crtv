@@ -1,0 +1,47 @@
+./tv.sh --show "How I Met Your Mother" --season 3 --episode 9 --resolution 144 --randomize-start
+
+./tv.sh --show "Rick and Morty" --season 2 --episode 4 --resolution 144 --randomize-start
+
+./tv.sh --show "The Office (US)" --season 3 --episode 9 --resolution 144 --randomize-start
+
+./tv.sh --show "South Park" --season 23 --episode 6 --resolution 144 --randomize-start
+
+./tv.sh --show "How It&#39;s Made" --season 17 --episode 9 --resolution 144 --randomize-start
+
+./tv.sh --show "That &#39;70s Show" --season 3 --episode 4 --resolution 144 --randomize-start
+
+./tv.sh --show "Silicon Valley" --season 2 --episode 6 --resolution 144 --randomize-start
+
+./tv.sh --show "Prehistoric Planet" --season 2 --episode 3 --resolution 144 --randomize-start
+
+./tv.sh --show "Avatar: The Last Airbender" --season 2 --episode 4 --resolution 144 --randomize-start
+
+./tv.sh --show "Blue Mountain State" --season 2 --episode 4 --resolution 144 --randomize-start
+
+Channel Switching:
+------------
+./tv.sh --switch --show "How I Met Your Mother" --season 3 --episode 9 --resolution 144 --randomize-start
+
+./tv.sh --switch --show "Rick and Morty" --season 2 --episode 4 --resolution 144 --randomize-start
+
+./tv.sh --switch --show "The Office (US)" --season 3 --episode 9 --resolution 144 --randomize-start
+
+./tv.sh --switch --show "South Park" --season 23 --episode 6 --resolution 144 --randomize-start
+
+./tv.sh --switch --show "How It&#39;s Made" --season 17 --episode 9 --resolution 144 --randomize-start
+
+./tv.sh --switch --show "That &#39;70s Show" --season 3 --episode 4 --resolution 144 --randomize-start
+
+./tv.sh --switch --show "Silicon Valley" --season 2 --episode 6 --resolution 144 --randomize-start
+
+./tv.sh --switch --show "Prehistoric Planet" --season 2 --episode 3 --resolution 144 --randomize-start
+
+./tv.sh --switch --show "Avatar: The Last Airbender" --season 2 --episode 4 --resolution 144 --randomize-start
+
+./tv.sh --switch --show "Blue Mountain State" --season 2 --episode 4 --resolution 144 --randomize-start
+
+
+kill
+--------
+pkill mpv || true
+rm -f /tmp/tv.sock
