@@ -65,6 +65,8 @@ fi
 : "${TV_SOCK:=/tmp/crt_player.sock}"
 : "${STATIC_FILE:=${REPO_ROOT}/assets/static.mp4}"
 : "${MIN_STATIC_SECONDS:=1.8}"
+: "${STATIC_REMOTE_SECONDS:=${MIN_STATIC_SECONDS}}"
+: "${STATIC_LOCAL_SECONDS:=${MIN_STATIC_SECONDS}}"
 : "${CHANNELS_FILE:=${REPO_ROOT}/channels.json}"
 : "${RESOLUTION:=240}"
 : "${YTDL_MAX_FPS:=30}"
@@ -73,12 +75,14 @@ fi
 : "${RANDOM_START_MAX_PCT:=80}"
 : "${CHANNEL_INDEX_FILE:=/tmp/crt_player_channel_index}"
 : "${TARGET_READY_TIMEOUT_SECONDS:=8}"
+: "${LOG_LEVEL:=info}"
 : "${DEFAULT_START_CHANNEL:=1}"
 : "${KEY_NEXT:=n}"
 : "${KEY_PREV:=p}"
 : "${KEY_RANDOM:=r}"
 : "${KEY_QUIT:=q}"
 : "${INPUT_EVENT_CMD:=}"
+: "${STATIC_VF_CHAIN:=${VF_CHAIN}}"
 
 usage() {
   cat <<'USAGE'
@@ -100,9 +104,10 @@ Examples:
 
 Env:
   STATIC_FILE, MIN_STATIC_SECONDS, CHANNELS_FILE,
+  STATIC_REMOTE_SECONDS, STATIC_LOCAL_SECONDS, STATIC_VF_CHAIN,
   ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, CHANNEL_INDEX_FILE,
   RESOLUTION, YTDL_MAX_FPS, PROFILE, MPV_VO, MPV_GPU_CONTEXT, MPV_HWDEC, VF_CHAIN,
-  DISPLAY, XAUTHORITY, DEFAULT_START_CHANNEL, KEY_NEXT, KEY_PREV, KEY_RANDOM, KEY_QUIT, INPUT_EVENT_CMD
+  DISPLAY, XAUTHORITY, LOG_LEVEL, DEFAULT_START_CHANNEL, KEY_NEXT, KEY_PREV, KEY_RANDOM, KEY_QUIT, INPUT_EVENT_CMD
 USAGE
 }
 
@@ -124,6 +129,28 @@ die() {
 
 trim() {
   awk '{$1=$1; print}'
+}
+
+log_level_num() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    debug) echo 10 ;;
+    info) echo 20 ;;
+    warn) echo 30 ;;
+    error) echo 40 ;;
+    off) echo 99 ;;
+    *) echo 20 ;;
+  esac
+}
+
+log_msg() {
+  local level="$1"
+  shift || true
+  local cfg_num lvl_num
+  cfg_num="$(log_level_num "$LOG_LEVEL")"
+  lvl_num="$(log_level_num "$level")"
+
+  (( lvl_num >= cfg_num )) || return 0
+  printf '[%s] %s: %s\n' "$(date '+%H:%M:%S')" "$level" "$*" >&2
 }
 
 upsert_mpv_arg() {
@@ -353,18 +380,38 @@ wait_for_target_ready() {
   return 1
 }
 
+static_duration_for_target() {
+  local target="$1"
+  if is_remote_source "$target"; then
+    printf '%s\n' "$STATIC_REMOTE_SECONDS"
+  else
+    printf '%s\n' "$STATIC_LOCAL_SECONDS"
+  fi
+}
+
 switch_channel() {
   local target="$1"
+  local static_seconds
+  local source_kind="local"
+  local switch_started_at
+  local ready_status="ready"
   target="$(normalize_target "$target")"
+  static_seconds="$(static_duration_for_target "$target")"
+  switch_started_at="$SECONDS"
+
+  if is_remote_source "$target"; then
+    source_kind="remote"
+  fi
 
   ensure_shell
   apply_runtime_source_options "$target"
 
-  mpv_send_json "$(jq -nc --arg vf "" '{"command":["vf", "set", $vf]}')"
+  log_msg info "switch begin source=${source_kind} static=${static_seconds}s"
+  mpv_send_json "$(jq -nc --arg vf "$STATIC_VF_CHAIN" '{"command":["vf", "set", $vf]}')"
   mpv_send_json "$(jq -nc --arg f "$STATIC_FILE" '{"command":["loadfile", $f, "replace"]}')"
   mpv_send_json "$(jq -nc '{"command":["set_property", "loop-file", "inf"]}')"
 
-  sleep "$MIN_STATIC_SECONDS"
+  sleep "$static_seconds"
 
   mpv_send_json "$(jq -nc --arg u "$target" '{"command":["loadfile", $u, "replace"]}')"
   mpv_send_json "$(jq -nc '{"command":["set_property", "loop-file", "no"]}')"
@@ -372,8 +419,10 @@ switch_channel() {
   sleep 0.20
   mpv_send_json "$(jq -nc --arg vf "$VF_CHAIN" '{"command":["vf", "set", $vf]}')"
 
-  wait_for_target_ready || true
+  wait_for_target_ready || ready_status="timeout"
   maybe_random_seek "$target"
+  log_msg info "switch end status=${ready_status} elapsed=$((SECONDS - switch_started_at))s"
+  [[ "$ready_status" == "timeout" ]] && log_msg warn "target not ready within ${TARGET_READY_TIMEOUT_SECONDS}s"
 }
 
 channels_filter='if type=="array" then . elif type=="object" and (.channels|type=="array") then .channels else [] end'
