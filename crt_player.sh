@@ -34,6 +34,7 @@ set -euo pipefail
 #   ./crt_player.sh switch --channel 3
 #   ./crt_player.sh switch --channel "news"
 #   ./crt_player.sh switch --url "https://..."
+#   ./crt_player.sh run [--channel 1]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
@@ -72,6 +73,12 @@ fi
 : "${RANDOM_START_MAX_PCT:=80}"
 : "${CHANNEL_INDEX_FILE:=/tmp/crt_player_channel_index}"
 : "${TARGET_READY_TIMEOUT_SECONDS:=8}"
+: "${DEFAULT_START_CHANNEL:=1}"
+: "${KEY_NEXT:=n}"
+: "${KEY_PREV:=p}"
+: "${KEY_RANDOM:=r}"
+: "${KEY_QUIT:=q}"
+: "${INPUT_EVENT_CMD:=}"
 
 usage() {
   cat <<'USAGE'
@@ -79,6 +86,7 @@ Usage:
   crt_player.sh list
   crt_player.sh start [--channel <index|name|url>] [--url <url_or_path>] [--resolution N] [--fps-cap N]
   crt_player.sh switch [--channel <index|name|url>] [--url <url_or_path>] [--random]
+  crt_player.sh run [--channel <index|name|url>] [--url <url_or_path>]
 
 Examples:
   ./crt_player.sh list
@@ -87,12 +95,14 @@ Examples:
   ./crt_player.sh switch --random   # random channel from channels.json
   ./crt_player.sh switch --channel news
   ./crt_player.sh switch --url "https://www.youtube.com/watch?v=XXXXXXXXXXX"
+  ./crt_player.sh run               # keyboard: n/p/r/1-9/q
+  INPUT_EVENT_CMD='./scripts/input-events-stub.sh' ./crt_player.sh run
 
 Env:
   STATIC_FILE, MIN_STATIC_SECONDS, CHANNELS_FILE,
   ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, CHANNEL_INDEX_FILE,
   RESOLUTION, YTDL_MAX_FPS, PROFILE, MPV_VO, MPV_GPU_CONTEXT, MPV_HWDEC, VF_CHAIN,
-  DISPLAY, XAUTHORITY
+  DISPLAY, XAUTHORITY, DEFAULT_START_CHANNEL, KEY_NEXT, KEY_PREV, KEY_RANDOM, KEY_QUIT, INPUT_EVENT_CMD
 USAGE
 }
 
@@ -462,6 +472,24 @@ get_next_channel_index() {
   printf '%s\n' "$next"
 }
 
+get_prev_channel_index() {
+  local count
+  local current=1
+  local prev
+
+  count="$(channel_count)"
+  (( count > 0 )) || die "No channels found in $CHANNELS_FILE"
+
+  if [[ -f "$CHANNEL_INDEX_FILE" ]]; then
+    current="$(cat "$CHANNEL_INDEX_FILE" 2>/dev/null || echo 1)"
+    is_int "$current" || current=1
+  fi
+
+  prev=$(( ((current - 2 + count) % count) + 1 ))
+  printf '%s\n' "$prev" > "$CHANNEL_INDEX_FILE"
+  printf '%s\n' "$prev"
+}
+
 remember_channel_index() {
   local idx="$1"
   is_int "$idx" || return 0
@@ -515,6 +543,105 @@ resolve_target() {
   fi
 
   return 1
+}
+
+switch_and_remember_index() {
+  local idx="$1"
+  local target
+  target="$(channel_url_by_index "$idx")"
+  remember_channel_index "$idx"
+  switch_channel "$target"
+}
+
+read_keyboard_event() {
+  local key=""
+  if ! IFS= read -rsn1 key; then
+    return 1
+  fi
+  printf '%s\n' "$key"
+}
+
+switch_random_channel() {
+  local count idx
+  count="$(channel_count)"
+  (( count > 0 )) || die "No channels found in $CHANNELS_FILE"
+  idx="$(rand_int_between 1 "$count")"
+  switch_and_remember_index "$idx"
+}
+
+switch_from_selector_or_url() {
+  local selector="$1"
+  local target idx
+
+  if [[ "$selector" =~ ^[0-9]+$ ]]; then
+    idx="$selector"
+    switch_and_remember_index "$idx"
+    return 0
+  fi
+
+  if idx="$(resolve_channel_selector_to_index "$selector" 2>/dev/null || true)"; then
+    switch_and_remember_index "$idx"
+    return 0
+  fi
+
+  target="$selector"
+  switch_channel "$target"
+}
+
+run_controller() {
+  local initial_done=0
+  local event cmd arg idx
+
+  ensure_shell
+
+  if resolve_target "$CHANNEL" "$URL"; then
+    [[ -n "$RESOLVED_TARGET" ]] && switch_channel "$RESOLVED_TARGET"
+    [[ -n "$RESOLVED_CHANNEL_INDEX" ]] && remember_channel_index "$RESOLVED_CHANNEL_INDEX"
+    initial_done=1
+  fi
+
+  if [[ "$initial_done" -eq 0 ]]; then
+    if idx="$(resolve_channel_selector_to_index "$DEFAULT_START_CHANNEL" 2>/dev/null || true)"; then
+      switch_and_remember_index "$idx"
+    else
+      idx="$(get_next_channel_index)"
+      switch_and_remember_index "$idx"
+    fi
+  fi
+
+  if [[ -n "$INPUT_EVENT_CMD" ]]; then
+    while IFS= read -r event; do
+      cmd="${event%%:*}"
+      arg="${event#*:}"
+      case "$cmd" in
+        next) switch_and_remember_index "$(get_next_channel_index)" ;;
+        prev) switch_and_remember_index "$(get_prev_channel_index)" ;;
+        random) switch_random_channel ;;
+        channel) [[ -n "$arg" ]] && switch_from_selector_or_url "$arg" ;;
+        url) [[ -n "$arg" ]] && switch_channel "$arg" ;;
+        quit) break ;;
+      esac
+    done < <(bash -lc "$INPUT_EVENT_CMD")
+    return 0
+  fi
+
+  echo "Controls: ${KEY_NEXT}=next ${KEY_PREV}=prev ${KEY_RANDOM}=random 1-9=channel ${KEY_QUIT}=quit"
+  while true; do
+    event="$(read_keyboard_event || true)"
+    [[ -n "$event" ]] || continue
+
+    if [[ "$event" == "$KEY_QUIT" ]]; then
+      break
+    elif [[ "$event" == "$KEY_NEXT" ]]; then
+      switch_and_remember_index "$(get_next_channel_index)"
+    elif [[ "$event" == "$KEY_PREV" ]]; then
+      switch_and_remember_index "$(get_prev_channel_index)"
+    elif [[ "$event" == "$KEY_RANDOM" ]]; then
+      switch_random_channel
+    elif [[ "$event" =~ ^[1-9]$ ]]; then
+      switch_and_remember_index "$event"
+    fi
+  done
 }
 
 COMMAND="${1:-}"
@@ -591,6 +718,9 @@ case "$COMMAND" in
       [[ -n "$RESOLVED_CHANNEL_INDEX" ]] && remember_channel_index "$RESOLVED_CHANNEL_INDEX"
     fi
     switch_channel "$RESOLVED_TARGET"
+    ;;
+  run)
+    run_controller
     ;;
   help)
     usage
