@@ -699,7 +699,16 @@ resolve_target() {
   fi
 
   if [[ -n "$channel" ]]; then
-    if idx="$(resolve_channel_selector_to_index "$channel" 2>/dev/null || true)"; then
+    if is_int "$channel"; then
+      if idx="$(resolve_channel_selector_to_index "$channel" 2>/dev/null)"; then
+        RESOLVED_CHANNEL_INDEX="$idx"
+        RESOLVED_TARGET="$(channel_url_by_index "$idx")"
+        return 0
+      fi
+      return 1
+    fi
+
+    if idx="$(resolve_channel_selector_to_index "$channel" 2>/dev/null)"; then
       RESOLVED_CHANNEL_INDEX="$idx"
       RESOLVED_TARGET="$(channel_url_by_index "$idx")"
       return 0
@@ -746,7 +755,7 @@ switch_from_selector_or_url() {
     return 0
   fi
 
-  if idx="$(resolve_channel_selector_to_index "$selector" 2>/dev/null || true)"; then
+  if idx="$(resolve_channel_selector_to_index "$selector" 2>/dev/null)"; then
     switch_and_remember_index "$idx"
     return 0
   fi
@@ -774,7 +783,7 @@ run_controller() {
   fi
 
   if [[ "$initial_done" -eq 0 ]]; then
-    if idx="$(resolve_channel_selector_to_index "$DEFAULT_START_CHANNEL" 2>/dev/null || true)"; then
+    if idx="$(resolve_channel_selector_to_index "$DEFAULT_START_CHANNEL" 2>/dev/null)"; then
       switch_and_remember_index "$idx"
     else
       idx="$(get_next_channel_index)"
@@ -938,7 +947,12 @@ case "$COMMAND" in
       RESOLVED_TARGET="$(channel_url_by_index "$RESOLVED_CHANNEL_INDEX")"
     else
       resolve_target "$CHANNEL" "$URL" || true
-      [[ -n "$RESOLVED_TARGET" ]] || die "switch requires --channel or --url"
+      if [[ -z "$RESOLVED_TARGET" ]]; then
+        if [[ -n "$CHANNEL" ]] && is_int "$CHANNEL"; then
+          die "Channel index out of range: $CHANNEL (use './crt_player.sh list')"
+        fi
+        die "switch requires --channel or --url"
+      fi
     fi
     switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" || true
     ;;
