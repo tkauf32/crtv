@@ -76,8 +76,14 @@ fi
 : "${CHANNEL_INDEX_FILE:=/tmp/crt_player_channel_index}"
 : "${TARGET_READY_TIMEOUT_SECONDS:=8}"
 : "${LOG_LEVEL:=info}"
+: "${LOG_FILE:=${REPO_ROOT}/logs/crt_player.log}"
+: "${LOG_FILE_LEVEL:=debug}"
+: "${LOG_TO_STDERR:=1}"
 : "${AUTO_ADVANCE_ON_END:=1}"
 : "${AUTO_ADVANCE_POLL_SECONDS:=0.5}"
+: "${RECOVER_TO_NEXT_ON_FAILURE:=1}"
+: "${MAX_RECOVERY_CHANNEL_TRIES:=5}"
+: "${AUTO_RECOVER_SHELL:=1}"
 : "${DEFAULT_START_CHANNEL:=1}"
 : "${KEY_NEXT:=n}"
 : "${KEY_PREV:=p}"
@@ -85,6 +91,9 @@ fi
 : "${KEY_QUIT:=q}"
 : "${INPUT_EVENT_CMD:=}"
 : "${STATIC_VF_CHAIN:=${VF_CHAIN}}"
+: "${AMIXER_BIN:=/usr/bin/amixer}"
+: "${AMIXER_CONTROL:=Master}"
+: "${VOLUME_STEP_PCT:=10}"
 
 usage() {
   cat <<'USAGE'
@@ -93,6 +102,7 @@ Usage:
   crt_player.sh start [--channel <index|name|url>] [--url <url_or_path>] [--resolution N] [--fps-cap N]
   crt_player.sh switch [--channel <index|name|url>] [--url <url_or_path>] [--random]
   crt_player.sh run [--channel <index|name|url>] [--url <url_or_path>]
+  crt_player.sh volume --up|--down [--step <percent>]
 
 Examples:
   ./crt_player.sh list
@@ -103,14 +113,18 @@ Examples:
   ./crt_player.sh switch --url "https://www.youtube.com/watch?v=XXXXXXXXXXX"
   ./crt_player.sh run               # keyboard: n/p/r/1-9/q
   INPUT_EVENT_CMD='./scripts/input-events-stub.sh' ./crt_player.sh run
+  ./crt_player.sh volume --up --step 10
 
 Env:
   STATIC_FILE, MIN_STATIC_SECONDS, CHANNELS_FILE,
   STATIC_REMOTE_SECONDS, STATIC_LOCAL_SECONDS, STATIC_VF_CHAIN,
   AUTO_ADVANCE_ON_END, AUTO_ADVANCE_POLL_SECONDS,
+  RECOVER_TO_NEXT_ON_FAILURE, MAX_RECOVERY_CHANNEL_TRIES, AUTO_RECOVER_SHELL,
   ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, CHANNEL_INDEX_FILE,
   RESOLUTION, YTDL_MAX_FPS, PROFILE, MPV_VO, MPV_GPU_CONTEXT, MPV_HWDEC, VF_CHAIN,
-  DISPLAY, XAUTHORITY, LOG_LEVEL, DEFAULT_START_CHANNEL, KEY_NEXT, KEY_PREV, KEY_RANDOM, KEY_QUIT, INPUT_EVENT_CMD
+  DISPLAY, XAUTHORITY, LOG_LEVEL, LOG_FILE, LOG_FILE_LEVEL, LOG_TO_STDERR,
+  DEFAULT_START_CHANNEL, KEY_NEXT, KEY_PREV, KEY_RANDOM, KEY_QUIT, INPUT_EVENT_CMD,
+  AMIXER_BIN, AMIXER_CONTROL, VOLUME_STEP_PCT
 USAGE
 }
 
@@ -152,15 +166,31 @@ log_level_num() {
   esac
 }
 
+LOG_FILE_READY=0
+init_log_file() {
+  [[ "$LOG_FILE_READY" -eq 1 ]] && return 0
+  mkdir -p "$(dirname "$LOG_FILE")" >/dev/null 2>&1 || return 1
+  touch "$LOG_FILE" >/dev/null 2>&1 || return 1
+  LOG_FILE_READY=1
+}
+
 log_msg() {
   local level="$1"
   shift || true
-  local cfg_num lvl_num
+  local cfg_num lvl_num file_cfg_num
   cfg_num="$(log_level_num "$LOG_LEVEL")"
+  file_cfg_num="$(log_level_num "$LOG_FILE_LEVEL")"
   lvl_num="$(log_level_num "$level")"
 
-  (( lvl_num >= cfg_num )) || return 0
-  printf '[%s] %s: %s\n' "$(date '+%H:%M:%S')" "$level" "$*" >&2
+  if (( lvl_num >= file_cfg_num )); then
+    if init_log_file; then
+      printf '[%s] %s: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$*" >>"$LOG_FILE"
+    fi
+  fi
+
+  if is_true "$LOG_TO_STDERR" && (( lvl_num >= cfg_num )); then
+    printf '[%s] %s: %s\n' "$(date '+%H:%M:%S')" "$level" "$*" >&2
+  fi
 }
 
 upsert_mpv_arg() {
@@ -254,6 +284,11 @@ ensure_socket_clean() {
   fi
 }
 
+socket_live() {
+  [[ -S "$TV_SOCK" ]] || return 1
+  socat -T 0.2 - UNIX-CONNECT:"$TV_SOCK" </dev/null >/dev/null 2>&1
+}
+
 ensure_shell() {
   ensure_socket_clean
   export DISPLAY XAUTHORITY
@@ -264,6 +299,7 @@ ensure_shell() {
 
     mpv "${MPV_ARGS[@]}" "$STATIC_FILE" >/dev/null 2>&1 &
     disown || true
+    log_msg info "started mpv shell sock=${TV_SOCK}"
 
     for _ in {1..60}; do
       [[ -S "$TV_SOCK" ]] || {
@@ -399,13 +435,26 @@ static_duration_for_target() {
   fi
 }
 
-switch_channel() {
+play_static_now() {
+  mpv_send_json "$(jq -nc --arg vf "$STATIC_VF_CHAIN" '{"command":["vf", "set", $vf]}')" || true
+  mpv_send_json "$(jq -nc --arg f "$STATIC_FILE" '{"command":["loadfile", $f, "replace"]}')" || true
+  mpv_send_json "$(jq -nc '{"command":["set_property", "loop-file", "inf"]}')" || true
+}
+
+switch_channel_attempt() {
   local target="$1"
   local static_seconds
   local source_kind="local"
   local switch_started_at
   local ready_status="ready"
+  local wait_ok=0
   target="$(normalize_target "$target")"
+
+  if ! is_remote_source "$target" && [[ ! -f "$target" ]]; then
+    log_msg error "target missing path=${target}"
+    return 1
+  fi
+
   static_seconds="$(static_duration_for_target "$target")"
   switch_started_at="$SECONDS"
 
@@ -417,22 +466,82 @@ switch_channel() {
   apply_runtime_source_options "$target"
 
   log_msg info "switch begin source=${source_kind} static=${static_seconds}s"
-  mpv_send_json "$(jq -nc --arg vf "$STATIC_VF_CHAIN" '{"command":["vf", "set", $vf]}')"
-  mpv_send_json "$(jq -nc --arg f "$STATIC_FILE" '{"command":["loadfile", $f, "replace"]}')"
-  mpv_send_json "$(jq -nc '{"command":["set_property", "loop-file", "inf"]}')"
+  play_static_now
 
   sleep "$static_seconds"
 
-  mpv_send_json "$(jq -nc --arg u "$target" '{"command":["loadfile", $u, "replace"]}')"
-  mpv_send_json "$(jq -nc '{"command":["set_property", "loop-file", "no"]}')"
+  mpv_send_json "$(jq -nc --arg u "$target" '{"command":["loadfile", $u, "replace"]}')" || true
+  mpv_send_json "$(jq -nc '{"command":["set_property", "loop-file", "no"]}')" || true
 
   sleep 0.20
-  mpv_send_json "$(jq -nc --arg vf "$VF_CHAIN" '{"command":["vf", "set", $vf]}')"
+  mpv_send_json "$(jq -nc --arg vf "$VF_CHAIN" '{"command":["vf", "set", $vf]}')" || true
 
-  wait_for_target_ready || ready_status="timeout"
+  if wait_for_target_ready; then
+    wait_ok=1
+  else
+    ready_status="timeout"
+  fi
+
+  if [[ "$wait_ok" -ne 1 ]]; then
+    play_static_now
+    log_msg warn "target failed readiness path=${target}; restored static"
+    log_msg info "switch end status=${ready_status} elapsed=$((SECONDS - switch_started_at))s"
+    return 1
+  fi
+
   maybe_random_seek "$target"
   log_msg info "switch end status=${ready_status} elapsed=$((SECONDS - switch_started_at))s"
-  [[ "$ready_status" == "timeout" ]] && log_msg warn "target not ready within ${TARGET_READY_TIMEOUT_SECONDS}s"
+  return 0
+}
+
+switch_with_recovery() {
+  local target="$1"
+  local from_index="${2:-0}"
+  local count tries max_tries idx candidate_target
+
+  if switch_channel_attempt "$target"; then
+    [[ "$from_index" -gt 0 ]] && remember_channel_index "$from_index"
+    return 0
+  fi
+
+  if ! is_true "$RECOVER_TO_NEXT_ON_FAILURE"; then
+    return 1
+  fi
+
+  count="$(channel_count 2>/dev/null || echo 0)"
+  (( count > 0 )) || return 1
+
+  max_tries="$MAX_RECOVERY_CHANNEL_TRIES"
+  is_int "$max_tries" || max_tries=5
+  (( max_tries > 0 )) || max_tries=1
+  (( max_tries <= count )) || max_tries="$count"
+
+  if (( from_index > 0 )); then
+    idx="$from_index"
+  else
+    idx="$(cat "$CHANNEL_INDEX_FILE" 2>/dev/null || echo 0)"
+    is_int "$idx" || idx=0
+  fi
+
+  for tries in $(seq 1 "$max_tries"); do
+    idx=$(( (idx % count) + 1 ))
+    candidate_target="$(channel_url_by_index "$idx" 2>/dev/null || true)"
+    [[ -n "$candidate_target" ]] || continue
+    log_msg warn "recovery attempt=$tries channel_index=$idx"
+    if switch_channel_attempt "$candidate_target"; then
+      remember_channel_index "$idx"
+      log_msg warn "recovered playback on channel_index=$idx"
+      return 0
+    fi
+  done
+
+  log_msg error "switch failed and recovery exhausted"
+  return 1
+}
+
+switch_channel() {
+  local target="$1"
+  switch_channel_attempt "$target"
 }
 
 channels_filter='if type=="array" then . elif type=="object" and (.channels|type=="array") then .channels else [] end'
@@ -608,8 +717,7 @@ switch_and_remember_index() {
   local idx="$1"
   local target
   target="$(channel_url_by_index "$idx")"
-  remember_channel_index "$idx"
-  switch_channel "$target"
+  switch_with_recovery "$target" "$idx" || true
 }
 
 read_keyboard_event() {
@@ -644,7 +752,7 @@ switch_from_selector_or_url() {
   fi
 
   target="$selector"
-  switch_channel "$target"
+  switch_with_recovery "$target" 0 || true
 }
 
 run_controller() {
@@ -661,8 +769,7 @@ run_controller() {
   ensure_shell
 
   if resolve_target "$CHANNEL" "$URL"; then
-    [[ -n "$RESOLVED_TARGET" ]] && switch_channel "$RESOLVED_TARGET"
-    [[ -n "$RESOLVED_CHANNEL_INDEX" ]] && remember_channel_index "$RESOLVED_CHANNEL_INDEX"
+    [[ -n "$RESOLVED_TARGET" ]] && switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" || true
     initial_done=1
   fi
 
@@ -695,6 +802,14 @@ run_controller() {
   echo "Controls: ${KEY_NEXT}=next ${KEY_PREV}=prev ${KEY_RANDOM}=random 1-9=channel ${KEY_QUIT}=quit"
   while true; do
     event=""
+
+    if is_true "$AUTO_RECOVER_SHELL"; then
+      if ! socket_live; then
+        log_msg error "mpv socket unavailable; restarting shell and recovering channel"
+        ensure_shell
+        switch_and_remember_index "$(get_next_channel_index)"
+      fi
+    fi
 
     if [[ "$input_mode" == "external" ]] && [[ -n "$input_fd" ]]; then
       if IFS= read -r -t "$poll_sleep" -u "$input_fd" event; then
@@ -733,7 +848,7 @@ run_controller() {
     elif [[ "$cmd" == "channel" ]] && [[ -n "$arg" ]]; then
       switch_from_selector_or_url "$arg"
     elif [[ "$cmd" == "url" ]] && [[ -n "$arg" ]]; then
-      switch_channel "$arg"
+      switch_with_recovery "$arg" 0 || true
     fi
   done
 }
@@ -748,6 +863,8 @@ shift || true
 CHANNEL=""
 URL=""
 RANDOM_SWITCH=0
+VOLUME_DIR=""
+VOLUME_STEP="$VOLUME_STEP_PCT"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -771,6 +888,18 @@ while [[ $# -gt 0 ]]; do
       RANDOM_SWITCH=1
       shift
       ;;
+    --up)
+      VOLUME_DIR="up"
+      shift
+      ;;
+    --down)
+      VOLUME_DIR="down"
+      shift
+      ;;
+    --step)
+      VOLUME_STEP="${2:-}"
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -781,9 +910,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-need_cmd mpv
-need_cmd socat
-need_cmd jq
+if [[ "$COMMAND" != "volume" ]]; then
+  need_cmd mpv
+  need_cmd socat
+  need_cmd jq
+fi
+log_msg debug "command=${COMMAND} channel=${CHANNEL:-} url=${URL:-} random=${RANDOM_SWITCH}"
 
 case "$COMMAND" in
   list)
@@ -792,8 +924,7 @@ case "$COMMAND" in
   start)
     ensure_shell
     if resolve_target "$CHANNEL" "$URL"; then
-      [[ -n "$RESOLVED_TARGET" ]] && switch_channel "$RESOLVED_TARGET"
-      [[ -n "$RESOLVED_CHANNEL_INDEX" ]] && remember_channel_index "$RESOLVED_CHANNEL_INDEX"
+      [[ -n "$RESOLVED_TARGET" ]] && switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" || true
     fi
     ;;
   switch)
@@ -802,19 +933,30 @@ case "$COMMAND" in
       (( count > 0 )) || die "No channels found in $CHANNELS_FILE"
       RESOLVED_CHANNEL_INDEX="$(rand_int_between 1 "$count")"
       RESOLVED_TARGET="$(channel_url_by_index "$RESOLVED_CHANNEL_INDEX")"
-      remember_channel_index "$RESOLVED_CHANNEL_INDEX"
     elif [[ -z "$CHANNEL" && -z "$URL" ]]; then
       RESOLVED_CHANNEL_INDEX="$(get_next_channel_index)"
       RESOLVED_TARGET="$(channel_url_by_index "$RESOLVED_CHANNEL_INDEX")"
     else
       resolve_target "$CHANNEL" "$URL" || true
       [[ -n "$RESOLVED_TARGET" ]] || die "switch requires --channel or --url"
-      [[ -n "$RESOLVED_CHANNEL_INDEX" ]] && remember_channel_index "$RESOLVED_CHANNEL_INDEX"
     fi
-    switch_channel "$RESOLVED_TARGET"
+    switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" || true
     ;;
   run)
     run_controller
+    ;;
+  volume)
+    need_cmd "$AMIXER_BIN"
+    is_int "$VOLUME_STEP" || die "--step must be an integer percent"
+    if [[ "$VOLUME_DIR" == "up" ]]; then
+      "$AMIXER_BIN" set "$AMIXER_CONTROL" "${VOLUME_STEP}%+"
+      log_msg info "volume up step=${VOLUME_STEP}%"
+    elif [[ "$VOLUME_DIR" == "down" ]]; then
+      "$AMIXER_BIN" set "$AMIXER_CONTROL" "${VOLUME_STEP}%-"
+      log_msg info "volume down step=${VOLUME_STEP}%"
+    else
+      die "volume requires --up or --down"
+    fi
     ;;
   help)
     usage

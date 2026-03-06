@@ -1,4 +1,4 @@
 local-videos/
 */.env
 .env
-
+logs/
