@@ -45,11 +45,15 @@ Important env vars:
 - `LOG_FILE` (default `./logs/crt_player.log`)
 - `LOG_FILE_LEVEL` (default `debug`)
 - `LOG_TO_STDERR` (`1`/`0`)
+- `MPV_LOG_FILE` (default `./logs/mpv.log`)
+- `MPV_LOG_LEVEL` (default `all=info,ytdl_hook=debug`)
+- `MPV_LOG_EXCERPT_LINES` (default `80`)
 - `AUTO_ADVANCE_ON_END` (`1`/`0`)
 - `AUTO_ADVANCE_POLL_SECONDS` (default `0.5`)
 - `RECOVER_TO_NEXT_ON_FAILURE` (`1`/`0`)
 - `MAX_RECOVERY_CHANNEL_TRIES` (default `5`)
 - `AUTO_RECOVER_SHELL` (`1`/`0`)
+- `SWITCH_LOCK_FILE`, `SWITCH_LOCK_WAIT_SECONDS`
 - `DEFAULT_START_CHANNEL`
 - `KEY_NEXT`, `KEY_PREV`, `KEY_RANDOM`, `KEY_QUIT`
 - `INPUT_EVENT_CMD`
@@ -72,6 +76,9 @@ LOG_LEVEL=info
 LOG_FILE=/home/tommy/crtv/logs/crt_player.log
 LOG_FILE_LEVEL=debug
 LOG_TO_STDERR=1
+MPV_LOG_FILE=/home/tommy/crtv/logs/mpv.log
+MPV_LOG_LEVEL=all=info,ytdl_hook=debug
+MPV_LOG_EXCERPT_LINES=120
 
 # Auto-switch to next channel when current program ends.
 AUTO_ADVANCE_ON_END=1
@@ -93,4 +100,10 @@ Volume controls over SSH:
 ```bash
 ./crt_player.sh volume --up --step 10
 ./crt_player.sh volume --down --step 5
+```
+
+Debug stream failures:
+```bash
+tail -f /home/tommy/crtv/logs/crt_player.log
+tail -f /home/tommy/crtv/logs/mpv.log
 ```

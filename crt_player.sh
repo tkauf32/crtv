@@ -79,11 +79,16 @@ fi
 : "${LOG_FILE:=${REPO_ROOT}/logs/crt_player.log}"
 : "${LOG_FILE_LEVEL:=debug}"
 : "${LOG_TO_STDERR:=1}"
+: "${MPV_LOG_FILE:=${REPO_ROOT}/logs/mpv.log}"
+: "${MPV_LOG_LEVEL:=all=info,ytdl_hook=debug}"
+: "${MPV_LOG_EXCERPT_LINES:=80}"
 : "${AUTO_ADVANCE_ON_END:=1}"
 : "${AUTO_ADVANCE_POLL_SECONDS:=0.5}"
 : "${RECOVER_TO_NEXT_ON_FAILURE:=1}"
 : "${MAX_RECOVERY_CHANNEL_TRIES:=5}"
 : "${AUTO_RECOVER_SHELL:=1}"
+: "${SWITCH_LOCK_FILE:=/tmp/crt_player_switch.lock}"
+: "${SWITCH_LOCK_WAIT_SECONDS:=30}"
 : "${DEFAULT_START_CHANNEL:=1}"
 : "${KEY_NEXT:=n}"
 : "${KEY_PREV:=p}"
@@ -122,7 +127,8 @@ Env:
   RECOVER_TO_NEXT_ON_FAILURE, MAX_RECOVERY_CHANNEL_TRIES, AUTO_RECOVER_SHELL,
   ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, CHANNEL_INDEX_FILE,
   RESOLUTION, YTDL_MAX_FPS, PROFILE, MPV_VO, MPV_GPU_CONTEXT, MPV_HWDEC, VF_CHAIN,
-  DISPLAY, XAUTHORITY, LOG_LEVEL, LOG_FILE, LOG_FILE_LEVEL, LOG_TO_STDERR,
+  DISPLAY, XAUTHORITY, LOG_LEVEL, LOG_FILE, LOG_FILE_LEVEL, LOG_TO_STDERR, MPV_LOG_FILE, MPV_LOG_LEVEL,
+  MPV_LOG_EXCERPT_LINES, SWITCH_LOCK_FILE, SWITCH_LOCK_WAIT_SECONDS,
   DEFAULT_START_CHANNEL, KEY_NEXT, KEY_PREV, KEY_RANDOM, KEY_QUIT, INPUT_EVENT_CMD,
   AMIXER_BIN, AMIXER_CONTROL, VOLUME_STEP_PCT
 USAGE
@@ -170,6 +176,7 @@ LOG_FILE_READY=0
 init_log_file() {
   [[ "$LOG_FILE_READY" -eq 1 ]] && return 0
   mkdir -p "$(dirname "$LOG_FILE")" >/dev/null 2>&1 || return 1
+  mkdir -p "$(dirname "$MPV_LOG_FILE")" >/dev/null 2>&1 || true
   touch "$LOG_FILE" >/dev/null 2>&1 || return 1
   LOG_FILE_READY=1
 }
@@ -256,6 +263,8 @@ build_mpv_args() {
 
   upsert_mpv_arg "input-ipc-server" "$TV_SOCK"
   upsert_mpv_arg "ytdl-format" "$(build_ytdl_format)"
+  upsert_mpv_arg "log-file" "$MPV_LOG_FILE"
+  upsert_mpv_arg "msg-level" "$MPV_LOG_LEVEL"
 }
 
 mpv_send_json() {
@@ -274,6 +283,49 @@ mpv_get_property() {
   printf '%s\n' "$resp" \
     | jq -r 'select(type == "object" and .error == "success") | .data' \
     | tail -n1
+}
+
+mpv_get_property_json() {
+  local prop="$1"
+  local req
+  local resp
+
+  req="$(jq -nc --arg p "$prop" '{"command":["get_property", $p]}')"
+  resp="$(printf '%s\n' "$req" | socat -T 1 - UNIX-CONNECT:"$TV_SOCK" 2>/dev/null || true)"
+
+  printf '%s\n' "$resp" \
+    | jq -rc 'select(type == "object" and .error == "success") | .data' \
+    | tail -n1
+}
+
+log_mpv_excerpt() {
+  local lines="${1:-$MPV_LOG_EXCERPT_LINES}"
+  local entry
+
+  [[ -f "$MPV_LOG_FILE" ]] || return 0
+  is_int "$lines" || lines=80
+  (( lines > 0 )) || lines=80
+
+  while IFS= read -r entry; do
+    log_msg debug "mpv: ${entry}"
+  done < <(tail -n "$lines" "$MPV_LOG_FILE" 2>/dev/null || true)
+}
+
+log_failure_diagnostics() {
+  local target="$1"
+  local paused ptime eof path cache_state tracks
+
+  paused="$(mpv_get_property "paused-for-cache" || true)"
+  ptime="$(mpv_get_property "playback-time" || true)"
+  eof="$(mpv_get_property "eof-reached" || true)"
+  path="$(mpv_get_property "path" || true)"
+  cache_state="$(mpv_get_property_json "demuxer-cache-state" || true)"
+  tracks="$(mpv_get_property_json "track-list" || true)"
+
+  log_msg error "switch diagnostics target=${target} paused-for-cache=${paused:-na} playback-time=${ptime:-na} eof=${eof:-na} path=${path:-na}"
+  [[ -n "$cache_state" ]] && log_msg debug "switch diagnostics demuxer-cache-state=${cache_state}"
+  [[ -n "$tracks" ]] && log_msg debug "switch diagnostics track-list=${tracks}"
+  log_mpv_excerpt "$MPV_LOG_EXCERPT_LINES"
 }
 
 ensure_socket_clean() {
@@ -485,6 +537,7 @@ switch_channel_attempt() {
   if [[ "$wait_ok" -ne 1 ]]; then
     play_static_now
     log_msg warn "target failed readiness path=${target}; restored static"
+    log_failure_diagnostics "$target"
     log_msg info "switch end status=${ready_status} elapsed=$((SECONDS - switch_started_at))s"
     return 1
   fi
@@ -498,6 +551,12 @@ switch_with_recovery() {
   local target="$1"
   local from_index="${2:-0}"
   local count tries max_tries idx candidate_target
+  local lock_fd
+
+  exec {lock_fd}> "$SWITCH_LOCK_FILE" || die "Unable to open switch lock: $SWITCH_LOCK_FILE"
+  if ! flock -w "$SWITCH_LOCK_WAIT_SECONDS" "$lock_fd"; then
+    die "Timed out waiting for switch lock: $SWITCH_LOCK_FILE"
+  fi
 
   if switch_channel_attempt "$target"; then
     [[ "$from_index" -gt 0 ]] && remember_channel_index "$from_index"
@@ -541,7 +600,7 @@ switch_with_recovery() {
 
 switch_channel() {
   local target="$1"
-  switch_channel_attempt "$target"
+  switch_with_recovery "$target" 0
 }
 
 channels_filter='if type=="array" then . elif type=="object" and (.channels|type=="array") then .channels else [] end'
@@ -919,24 +978,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$COMMAND" != "volume" ]]; then
-  need_cmd mpv
-  need_cmd socat
-  need_cmd jq
-fi
 log_msg debug "command=${COMMAND} channel=${CHANNEL:-} url=${URL:-} random=${RANDOM_SWITCH}"
 
 case "$COMMAND" in
   list)
+    need_cmd jq
     list_channels
     ;;
   start)
+    need_cmd mpv
+    need_cmd socat
+    need_cmd jq
+    need_cmd flock
     ensure_shell
     if resolve_target "$CHANNEL" "$URL"; then
       [[ -n "$RESOLVED_TARGET" ]] && switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" || true
     fi
     ;;
   switch)
+    need_cmd mpv
+    need_cmd socat
+    need_cmd jq
+    need_cmd flock
     if [[ "$RANDOM_SWITCH" -eq 1 ]]; then
       count="$(channel_count)"
       (( count > 0 )) || die "No channels found in $CHANNELS_FILE"
@@ -957,6 +1020,10 @@ case "$COMMAND" in
     switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" || true
     ;;
   run)
+    need_cmd mpv
+    need_cmd socat
+    need_cmd jq
+    need_cmd flock
     run_controller
     ;;
   volume)
