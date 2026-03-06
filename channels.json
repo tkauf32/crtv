@@ -9,8 +9,8 @@
       "url": "https://www.youtube.com/watch?v=Xzv84ZdtlE0"
     },
     {
-      "name": "earth-search",
-      "url": "https://www.youtube.com/results?search_query=4k+uhd+earth"
+      "name": "martin-garrix-radio",
+      "url": "https://www.youtube.com/watch?v=pNNMr5glICM&list=RDpNNMr5glICM&start_radio=1"
     },
     {
       "name": "channel-4",
@@ -27,6 +27,14 @@
     {
       "name": "local-iceland",
       "url": "assets/iceland-illenium-v6.mov"
+    },
+    {
+      "name": "channel-8",
+      "url": "https://www.youtube.com/watch?v=vcj2iZ7kAfA"
+    },    
+    {
+      "name": "channel-9",
+      "url": "https://www.youtube.com/watch?v=QJbpJQscn9E"
     }
   ]
 }
