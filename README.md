@@ -41,6 +41,8 @@ Important env vars:
 - `STATIC_REMOTE_SECONDS`, `STATIC_LOCAL_SECONDS`, `STATIC_VF_CHAIN`
 - `CHANNELS_FILE`, `CHANNEL_INDEX_FILE`
 - `LOG_LEVEL` (`debug`, `info`, `warn`, `error`, `off`)
+- `AUTO_ADVANCE_ON_END` (`1`/`0`)
+- `AUTO_ADVANCE_POLL_SECONDS` (default `0.5`)
 - `DEFAULT_START_CHANNEL`
 - `KEY_NEXT`, `KEY_PREV`, `KEY_RANDOM`, `KEY_QUIT`
 - `INPUT_EVENT_CMD`
@@ -57,4 +59,14 @@ STATIC_VF_CHAIN='crop=ih*4/3:ih'
 
 # One concise line at switch start/end.
 LOG_LEVEL=info
+
+# Auto-switch to next channel when current program ends.
+AUTO_ADVANCE_ON_END=1
+AUTO_ADVANCE_POLL_SECONDS=0.5
+```
+
+If `run` returns to shell right after starting, clear external input mode:
+```bash
+unset INPUT_EVENT_CMD
+./crt_player.sh run
 ```

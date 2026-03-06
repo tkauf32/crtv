@@ -76,6 +76,8 @@ fi
 : "${CHANNEL_INDEX_FILE:=/tmp/crt_player_channel_index}"
 : "${TARGET_READY_TIMEOUT_SECONDS:=8}"
 : "${LOG_LEVEL:=info}"
+: "${AUTO_ADVANCE_ON_END:=1}"
+: "${AUTO_ADVANCE_POLL_SECONDS:=0.5}"
 : "${DEFAULT_START_CHANNEL:=1}"
 : "${KEY_NEXT:=n}"
 : "${KEY_PREV:=p}"
@@ -105,6 +107,7 @@ Examples:
 Env:
   STATIC_FILE, MIN_STATIC_SECONDS, CHANNELS_FILE,
   STATIC_REMOTE_SECONDS, STATIC_LOCAL_SECONDS, STATIC_VF_CHAIN,
+  AUTO_ADVANCE_ON_END, AUTO_ADVANCE_POLL_SECONDS,
   ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, CHANNEL_INDEX_FILE,
   RESOLUTION, YTDL_MAX_FPS, PROFILE, MPV_VO, MPV_GPU_CONTEXT, MPV_HWDEC, VF_CHAIN,
   DISPLAY, XAUTHORITY, LOG_LEVEL, DEFAULT_START_CHANNEL, KEY_NEXT, KEY_PREV, KEY_RANDOM, KEY_QUIT, INPUT_EVENT_CMD
@@ -120,6 +123,13 @@ need_cmd() {
 
 is_int() {
   [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+is_true() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 die() {
@@ -604,7 +614,7 @@ switch_and_remember_index() {
 
 read_keyboard_event() {
   local key=""
-  if ! IFS= read -rsn1 key; then
+  if ! IFS= read -rsn1 -t "${1:-0.1}" key; then
     return 1
   fi
   printf '%s\n' "$key"
@@ -640,6 +650,13 @@ switch_from_selector_or_url() {
 run_controller() {
   local initial_done=0
   local event cmd arg idx
+  local input_mode="keyboard"
+  local eof_state=""
+  local last_eof_state=""
+  local poll_sleep="$AUTO_ADVANCE_POLL_SECONDS"
+  local key_timeout="0.1"
+  local input_fd=""
+  local input_pid=""
 
   ensure_shell
 
@@ -658,37 +675,65 @@ run_controller() {
     fi
   fi
 
+  if ! awk "BEGIN { exit !(${poll_sleep} > 0) }"; then
+    poll_sleep="0.5"
+  fi
+  key_timeout="$poll_sleep"
+
   if [[ -n "$INPUT_EVENT_CMD" ]]; then
-    while IFS= read -r event; do
-      cmd="${event%%:*}"
-      arg="${event#*:}"
-      case "$cmd" in
-        next) switch_and_remember_index "$(get_next_channel_index)" ;;
-        prev) switch_and_remember_index "$(get_prev_channel_index)" ;;
-        random) switch_random_channel ;;
-        channel) [[ -n "$arg" ]] && switch_from_selector_or_url "$arg" ;;
-        url) [[ -n "$arg" ]] && switch_channel "$arg" ;;
-        quit) break ;;
-      esac
-    done < <(bash -lc "$INPUT_EVENT_CMD")
-    return 0
+    # External input command can feed events from hardware. If it exits,
+    # fall back to keyboard control instead of ending run mode.
+    coproc INPUT_PROC { bash -lc "$INPUT_EVENT_CMD"; }
+    input_fd="${INPUT_PROC[0]:-}"
+    input_pid="${INPUT_PROC_PID:-}"
+    if [[ -n "$input_fd" ]]; then
+      input_mode="external"
+      log_msg info "input mode=external cmd='${INPUT_EVENT_CMD}'"
+    fi
   fi
 
   echo "Controls: ${KEY_NEXT}=next ${KEY_PREV}=prev ${KEY_RANDOM}=random 1-9=channel ${KEY_QUIT}=quit"
   while true; do
-    event="$(read_keyboard_event || true)"
-    [[ -n "$event" ]] || continue
+    event=""
 
-    if [[ "$event" == "$KEY_QUIT" ]]; then
-      break
-    elif [[ "$event" == "$KEY_NEXT" ]]; then
+    if [[ "$input_mode" == "external" ]] && [[ -n "$input_fd" ]]; then
+      if IFS= read -r -t "$poll_sleep" -u "$input_fd" event; then
+        :
+      else
+        if [[ -n "$input_pid" ]] && ! kill -0 "$input_pid" 2>/dev/null; then
+          log_msg warn "input event command exited; falling back to keyboard mode"
+          input_mode="keyboard"
+        fi
+      fi
+    else
+      event="$(read_keyboard_event "$key_timeout" || true)"
+    fi
+
+    eof_state="$(mpv_get_property "eof-reached" || true)"
+    if is_true "$AUTO_ADVANCE_ON_END" && [[ "$eof_state" == "true" ]] && [[ "$last_eof_state" != "true" ]]; then
+      log_msg info "program ended; auto-advancing to next channel"
       switch_and_remember_index "$(get_next_channel_index)"
-    elif [[ "$event" == "$KEY_PREV" ]]; then
+    fi
+    last_eof_state="$eof_state"
+
+    [[ -n "$event" ]] || continue
+    cmd="${event%%:*}"
+    arg="${event#*:}"
+
+    if [[ "$event" == "$KEY_QUIT" ]] || [[ "$cmd" == "quit" ]]; then
+      break
+    elif [[ "$event" == "$KEY_NEXT" ]] || [[ "$cmd" == "next" ]]; then
+      switch_and_remember_index "$(get_next_channel_index)"
+    elif [[ "$event" == "$KEY_PREV" ]] || [[ "$cmd" == "prev" ]]; then
       switch_and_remember_index "$(get_prev_channel_index)"
-    elif [[ "$event" == "$KEY_RANDOM" ]]; then
+    elif [[ "$event" == "$KEY_RANDOM" ]] || [[ "$cmd" == "random" ]]; then
       switch_random_channel
     elif [[ "$event" =~ ^[1-9]$ ]]; then
       switch_and_remember_index "$event"
+    elif [[ "$cmd" == "channel" ]] && [[ -n "$arg" ]]; then
+      switch_from_selector_or_url "$arg"
+    elif [[ "$cmd" == "url" ]] && [[ -n "$arg" ]]; then
+      switch_channel "$arg"
     fi
   done
 }
