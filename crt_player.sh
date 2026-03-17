@@ -555,23 +555,34 @@ switch_with_recovery() {
   local lock_fd
   local numbers=()
   local pos=-1
+  local rc=1
 
   exec {lock_fd}> "$SWITCH_LOCK_FILE" || die "Unable to open switch lock: $SWITCH_LOCK_FILE"
   if ! flock -w "$SWITCH_LOCK_WAIT_SECONDS" "$lock_fd"; then
+    exec {lock_fd}>&-
     die "Timed out waiting for switch lock: $SWITCH_LOCK_FILE"
   fi
 
   if switch_channel_attempt "$target"; then
     [[ "$from_index" -gt 0 ]] && remember_channel_index "$from_index"
-    return 0
+    rc=0
+    flock -u "$lock_fd" || true
+    exec {lock_fd}>&-
+    return "$rc"
   fi
 
   if ! is_true "$RECOVER_TO_NEXT_ON_FAILURE"; then
+    flock -u "$lock_fd" || true
+    exec {lock_fd}>&-
     return 1
   fi
 
   mapfile -t numbers < <(list_active_channel_numbers 2>/dev/null)
-  (( ${#numbers[@]} > 0 )) || return 1
+  if (( ${#numbers[@]} == 0 )); then
+    flock -u "$lock_fd" || true
+    exec {lock_fd}>&-
+    return 1
+  fi
 
   max_tries="$MAX_RECOVERY_CHANNEL_TRIES"
   is_int "$max_tries" || max_tries=5
@@ -604,11 +615,16 @@ switch_with_recovery() {
     if switch_channel_attempt "$candidate_target"; then
       remember_channel_index "$idx"
       log_msg warn "recovered playback on channel_index=$idx"
-      return 0
+      rc=0
+      flock -u "$lock_fd" || true
+      exec {lock_fd}>&-
+      return "$rc"
     fi
   done
 
   log_msg error "switch failed and recovery exhausted"
+  flock -u "$lock_fd" || true
+  exec {lock_fd}>&-
   return 1
 }
 

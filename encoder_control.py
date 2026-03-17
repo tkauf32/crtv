@@ -12,7 +12,7 @@ CRT_PLAYER = "/home/tommy/crtv/crt_player.sh"
 
 MIN_CHANNEL = 1
 MAX_CHANNEL = 10
-current_channel = 1
+current_channel = 0
 
 BUTTON_BOUNCE = 0.05
 COMMAND_COOLDOWN_SECONDS = 0.15
@@ -97,6 +97,10 @@ def switch_channel(channel):
 
 
 def next_channel():
+    if current_channel < MIN_CHANNEL:
+        switch_channel(MIN_CHANNEL)
+        return
+
     new_channel = current_channel + 1
     if new_channel > MAX_CHANNEL:
         new_channel = MIN_CHANNEL
@@ -104,6 +108,10 @@ def next_channel():
 
 
 def prev_channel():
+    if current_channel < MIN_CHANNEL:
+        switch_channel(MAX_CHANNEL)
+        return
+
     new_channel = current_channel - 1
     if new_channel < MIN_CHANNEL:
         new_channel = MAX_CHANNEL
