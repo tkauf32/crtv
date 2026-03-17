@@ -694,7 +694,7 @@ channel_url_by_index() {
   local resolved=""
   channel_file_check
 
-  entry_json="$(jq -cer --argjson idx "$idx" "
+  entry_json="$(jq -ce --argjson idx "$idx" "
     ${numbered_active_channels_filter}
     | map(select(.number == \$idx))
     | if length == 0 then empty else .[0].value end
@@ -727,10 +727,10 @@ channel_url_by_index() {
     next_program=$(( (current_program % program_count) + 1 ))
     printf '%s\n' "$next_program" > "$program_state_file"
 
-    program_json="$(printf '%s\n' "$entry_json" | jq -cer --argjson n "$next_program" '.programs[$n-1]' 2>/dev/null || true)"
+    program_json="$(printf '%s\n' "$entry_json" | jq -ce --argjson n "$next_program" '.programs[$n-1]' 2>/dev/null || true)"
     [[ -n "$program_json" ]] || return 1
     resolved="$(resolve_program_entry "$program_json" || true)"
-    [[ -n "$resolved" ]] || die "Channel $idx program $next_program did not resolve to a URL/path"
+    [[ -n "$resolved" ]] || return 1
     printf '%s\n' "$resolved"
     return 0
   fi
