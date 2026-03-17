@@ -74,6 +74,7 @@ fi
 : "${RANDOM_START_MIN_PCT:=20}"
 : "${RANDOM_START_MAX_PCT:=80}"
 : "${CHANNEL_INDEX_FILE:=/tmp/crt_player_channel_index}"
+: "${PROGRAM_INDEX_DIR:=/tmp/crt_player_program_index}"
 : "${TARGET_READY_TIMEOUT_SECONDS:=8}"
 : "${LOG_LEVEL:=info}"
 : "${LOG_FILE:=${REPO_ROOT}/logs/crt_player.log}"
@@ -125,7 +126,7 @@ Env:
   STATIC_REMOTE_SECONDS, STATIC_LOCAL_SECONDS, STATIC_VF_CHAIN,
   AUTO_ADVANCE_ON_END, AUTO_ADVANCE_POLL_SECONDS,
   RECOVER_TO_NEXT_ON_FAILURE, MAX_RECOVERY_CHANNEL_TRIES, AUTO_RECOVER_SHELL,
-  ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, CHANNEL_INDEX_FILE,
+  ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, CHANNEL_INDEX_FILE, PROGRAM_INDEX_DIR,
   RESOLUTION, YTDL_MAX_FPS, PROFILE, MPV_VO, MPV_GPU_CONTEXT, MPV_HWDEC, VF_CHAIN,
   DISPLAY, XAUTHORITY, LOG_LEVEL, LOG_FILE, LOG_FILE_LEVEL, LOG_TO_STDERR, MPV_LOG_FILE, MPV_LOG_LEVEL,
   MPV_LOG_EXCERPT_LINES, SWITCH_LOCK_FILE, SWITCH_LOCK_WAIT_SECONDS,
@@ -550,8 +551,10 @@ switch_channel_attempt() {
 switch_with_recovery() {
   local target="$1"
   local from_index="${2:-0}"
-  local count tries max_tries idx candidate_target
+  local tries max_tries idx candidate_target
   local lock_fd
+  local numbers=()
+  local pos=-1
 
   exec {lock_fd}> "$SWITCH_LOCK_FILE" || die "Unable to open switch lock: $SWITCH_LOCK_FILE"
   if ! flock -w "$SWITCH_LOCK_WAIT_SECONDS" "$lock_fd"; then
@@ -567,13 +570,13 @@ switch_with_recovery() {
     return 1
   fi
 
-  count="$(channel_count 2>/dev/null || echo 0)"
-  (( count > 0 )) || return 1
+  mapfile -t numbers < <(list_active_channel_numbers 2>/dev/null)
+  (( ${#numbers[@]} > 0 )) || return 1
 
   max_tries="$MAX_RECOVERY_CHANNEL_TRIES"
   is_int "$max_tries" || max_tries=5
   (( max_tries > 0 )) || max_tries=1
-  (( max_tries <= count )) || max_tries="$count"
+  (( max_tries <= ${#numbers[@]} )) || max_tries="${#numbers[@]}"
 
   if (( from_index > 0 )); then
     idx="$from_index"
@@ -582,8 +585,19 @@ switch_with_recovery() {
     is_int "$idx" || idx=0
   fi
 
+  for i in "${!numbers[@]}"; do
+    if (( numbers[$i] == idx )); then
+      pos="$i"
+      break
+    fi
+  done
+
   for tries in $(seq 1 "$max_tries"); do
-    idx=$(( (idx % count) + 1 ))
+    if (( ${#numbers[@]} == 0 )); then
+      break
+    fi
+    pos=$(( (pos + 1 + ${#numbers[@]}) % ${#numbers[@]} ))
+    idx="${numbers[$pos]}"
     candidate_target="$(channel_url_by_index "$idx" 2>/dev/null || true)"
     [[ -n "$candidate_target" ]] || continue
     log_msg warn "recovery attempt=$tries channel_index=$idx"
@@ -604,6 +618,17 @@ switch_channel() {
 }
 
 channels_filter='if type=="array" then . elif type=="object" and (.channels|type=="array") then .channels else [] end'
+active_channels_filter="${channels_filter} | map(select((.disabled // false) | not))"
+numbered_active_channels_filter='
+  '"${active_channels_filter}"'
+  | to_entries
+  | map({
+      list_index: (.key + 1),
+      number: (.value.number // (.key + 1)),
+      name: (.value.name // "-"),
+      value: .value
+    })
+'
 
 channel_file_check() {
   [[ -f "$CHANNELS_FILE" ]] || die "Channels file not found: $CHANNELS_FILE"
@@ -611,39 +636,101 @@ channel_file_check() {
 
 channel_count() {
   channel_file_check
-  jq -er "${channels_filter} | length" "$CHANNELS_FILE"
+  jq -er "${active_channels_filter} | length" "$CHANNELS_FILE"
 }
 
-channel_url_by_index() {
-  local idx="$1"
-  local entry_type=""
-  local cmd=""
-  local resolved=""
+list_active_channel_numbers() {
   channel_file_check
+  jq -r "${numbered_active_channels_filter} | sort_by(.number) | .[].number" "$CHANNELS_FILE"
+}
 
-  entry_type="$(jq -er --argjson idx "$idx" "
-    ${channels_filter}
-    | .[\$idx-1] as \$v
-    | if \$v == null then empty else (\$v|type) end
-  " "$CHANNELS_FILE" 2>/dev/null || true)"
+program_state_file_for_channel() {
+  local channel_number="$1"
+  mkdir -p "$PROGRAM_INDEX_DIR" >/dev/null 2>&1 || true
+  printf '%s/channel_%s.index\n' "$PROGRAM_INDEX_DIR" "$channel_number"
+}
 
+resolve_program_entry() {
+  local program_json="$1"
+  local entry_type=""
+  local resolved=""
+  local cmd=""
+
+  entry_type="$(printf '%s\n' "$program_json" | jq -er 'type' 2>/dev/null || true)"
   [[ -n "$entry_type" ]] || return 1
 
   if [[ "$entry_type" == "string" ]]; then
-    jq -er --argjson idx "$idx" "${channels_filter} | .[\$idx-1]" "$CHANNELS_FILE" 2>/dev/null
+    printf '%s\n' "$program_json" | jq -er '.' 2>/dev/null
     return 0
   fi
 
-  resolved="$(jq -er --argjson idx "$idx" "${channels_filter} | .[\$idx-1].url // empty" "$CHANNELS_FILE" 2>/dev/null || true)"
+  resolved="$(printf '%s\n' "$program_json" | jq -er '.url // empty' 2>/dev/null || true)"
   if [[ -n "$resolved" ]]; then
     printf '%s\n' "$resolved"
     return 0
   fi
 
-  cmd="$(jq -er --argjson idx "$idx" "${channels_filter} | .[\$idx-1].cmd // empty" "$CHANNELS_FILE" 2>/dev/null || true)"
+  cmd="$(printf '%s\n' "$program_json" | jq -er '.cmd // empty' 2>/dev/null || true)"
   if [[ -n "$cmd" ]]; then
     resolved="$(bash -lc "$cmd" 2>/dev/null | head -n1 | trim || true)"
-    [[ -n "$resolved" ]] || die "Channel $idx cmd returned no URL/path"
+    [[ -n "$resolved" ]] || return 1
+    printf '%s\n' "$resolved"
+    return 0
+  fi
+
+  return 1
+}
+
+channel_url_by_index() {
+  local idx="$1"
+  local entry_json=""
+  local entry_type=""
+  local channel_number=""
+  local program_count=0
+  local program_state_file=""
+  local current_program=0
+  local next_program=1
+  local program_json=""
+  local resolved=""
+  channel_file_check
+
+  entry_json="$(jq -cer --argjson idx "$idx" "
+    ${numbered_active_channels_filter}
+    | map(select(.number == \$idx))
+    | if length == 0 then empty else .[0].value end
+  " "$CHANNELS_FILE" 2>/dev/null || true)"
+
+  [[ -n "$entry_json" ]] || return 1
+  entry_type="$(printf '%s\n' "$entry_json" | jq -er 'type' 2>/dev/null || true)"
+
+  if [[ "$entry_type" == "string" ]]; then
+    printf '%s\n' "$entry_json" | jq -er '.' 2>/dev/null
+    return 0
+  fi
+
+  resolved="$(printf '%s\n' "$entry_json" | jq -er '.url // empty' 2>/dev/null || true)"
+  if [[ -n "$resolved" ]]; then
+    printf '%s\n' "$resolved"
+    return 0
+  fi
+
+  program_count="$(printf '%s\n' "$entry_json" | jq -er '.programs | length' 2>/dev/null || echo 0)"
+  if (( program_count > 0 )); then
+    channel_number="$(printf '%s\n' "$entry_json" | jq -er --argjson fallback "$idx" '.number // $fallback' 2>/dev/null || echo "$idx")"
+    program_state_file="$(program_state_file_for_channel "$channel_number")"
+
+    if [[ -f "$program_state_file" ]]; then
+      current_program="$(cat "$program_state_file" 2>/dev/null || echo 0)"
+      is_int "$current_program" || current_program=0
+    fi
+
+    next_program=$(( (current_program % program_count) + 1 ))
+    printf '%s\n' "$next_program" > "$program_state_file"
+
+    program_json="$(printf '%s\n' "$entry_json" | jq -cer --argjson n "$next_program" '.programs[$n-1]' 2>/dev/null || true)"
+    [[ -n "$program_json" ]] || return 1
+    resolved="$(resolve_program_entry "$program_json" || true)"
+    [[ -n "$resolved" ]] || die "Channel $idx program $next_program did not resolve to a URL/path"
     printf '%s\n' "$resolved"
     return 0
   fi
@@ -658,21 +745,26 @@ resolve_channel_selector_to_index() {
   channel_file_check
 
   if is_int "$selector"; then
-    idx="$(jq -er --argjson idx "$selector" "${channels_filter} | if .[\$idx-1] == null then empty else \$idx end" "$CHANNELS_FILE" 2>/dev/null || true)"
+    idx="$(jq -er --argjson idx "$selector" "
+      ${numbered_active_channels_filter}
+      | map(select(.number == \$idx))
+      | if length == 0 then empty else .[0].number end
+    " "$CHANNELS_FILE" 2>/dev/null || true)"
   else
     idx="$(jq -er --arg name "$selector" "
-      ${channels_filter}
-      | to_entries
+      ${numbered_active_channels_filter}
       | map(select((.value|type == \"object\") and (.value.name? != null) and ((.value.name|ascii_downcase) == (\$name|ascii_downcase))))
-      | if length == 0 then empty else (.[0].key + 1) end
+      | if length == 0 then empty else .[0].number end
     " "$CHANNELS_FILE" 2>/dev/null || true)"
 
     if [[ -z "$idx" ]]; then
       idx="$(jq -er --arg maybe "$selector" "
-        ${channels_filter}
-        | to_entries
-        | map(select(((.value|type) == \"string\" and .value == \$maybe) or ((.value|type) == \"object\" and (.value.url? == \$maybe))))
-        | if length == 0 then empty else (.[0].key + 1) end
+        ${numbered_active_channels_filter}
+        | map(select(
+            ((.value|type) == \"string\" and .value == \$maybe)
+            or ((.value|type) == \"object\" and (.value.url? == \$maybe))
+          ))
+        | if length == 0 then empty else .[0].number end
       " "$CHANNELS_FILE" 2>/dev/null || true)"
     fi
   fi
@@ -682,37 +774,54 @@ resolve_channel_selector_to_index() {
 }
 
 get_next_channel_index() {
-  local count
+  local numbers=()
   local current=0
-  local next
+  local next=""
 
-  count="$(channel_count)"
-  (( count > 0 )) || die "No channels found in $CHANNELS_FILE"
+  mapfile -t numbers < <(list_active_channel_numbers 2>/dev/null)
+  (( ${#numbers[@]} > 0 )) || die "No channels found in $CHANNELS_FILE"
 
   if [[ -f "$CHANNEL_INDEX_FILE" ]]; then
     current="$(cat "$CHANNEL_INDEX_FILE" 2>/dev/null || echo 0)"
     is_int "$current" || current=0
   fi
 
-  next=$(( (current % count) + 1 ))
+  for next in "${numbers[@]}"; do
+    if (( next > current )); then
+      printf '%s\n' "$next" > "$CHANNEL_INDEX_FILE"
+      printf '%s\n' "$next"
+      return 0
+    fi
+  done
+
+  next="${numbers[0]}"
   printf '%s\n' "$next" > "$CHANNEL_INDEX_FILE"
   printf '%s\n' "$next"
 }
 
 get_prev_channel_index() {
-  local count
+  local numbers=()
   local current=1
-  local prev
+  local prev=""
 
-  count="$(channel_count)"
-  (( count > 0 )) || die "No channels found in $CHANNELS_FILE"
+  mapfile -t numbers < <(list_active_channel_numbers 2>/dev/null)
+  (( ${#numbers[@]} > 0 )) || die "No channels found in $CHANNELS_FILE"
 
   if [[ -f "$CHANNEL_INDEX_FILE" ]]; then
     current="$(cat "$CHANNEL_INDEX_FILE" 2>/dev/null || echo 1)"
     is_int "$current" || current=1
   fi
 
-  prev=$(( ((current - 2 + count) % count) + 1 ))
+  for (( i=${#numbers[@]}-1; i>=0; i-- )); do
+    prev="${numbers[$i]}"
+    if (( prev < current )); then
+      printf '%s\n' "$prev" > "$CHANNEL_INDEX_FILE"
+      printf '%s\n' "$prev"
+      return 0
+    fi
+  done
+
+  prev="${numbers[$((${#numbers[@]}-1))]}"
   printf '%s\n' "$prev" > "$CHANNEL_INDEX_FILE"
   printf '%s\n' "$prev"
 }
@@ -729,12 +838,18 @@ list_channels() {
   jq -r "
     ${channels_filter}
     | to_entries[]
-    | (.key + 1) as \$idx
+    | (.value.number // (.key + 1)) as \$num
     | .value as \$v
     | if (\$v|type) == \"string\" then
-        \"\(\$idx)\t-\t\(\$v)\"
+        \"\(\$num)\t-\t\(\$v)\"
       elif (\$v|type) == \"object\" then
-        \"\(\$idx)\t\((\$v.name // \"-\"))\t\((\$v.url // \$v.cmd // \"\"))\"
+        if (\$v.disabled // false) then
+          \"\(\$num)\t\((\$v.name // \"-\"))\t[disabled]\"
+        elif ((\$v.programs // []) | length) > 0 then
+          \"\(\$num)\t\((\$v.name // \"-\"))\tprograms=\((\$v.programs | length))\"
+        else
+          \"\(\$num)\t\((\$v.name // \"-\"))\t\((\$v.url // \$v.cmd // \"\"))\"
+        end
       else
         empty
       end
@@ -797,11 +912,12 @@ read_keyboard_event() {
 }
 
 switch_random_channel() {
-  local count idx
-  count="$(channel_count)"
-  (( count > 0 )) || die "No channels found in $CHANNELS_FILE"
-  idx="$(rand_int_between 1 "$count")"
-  switch_and_remember_index "$idx"
+  local numbers=()
+  local pick=0
+  mapfile -t numbers < <(list_active_channel_numbers 2>/dev/null)
+  (( ${#numbers[@]} > 0 )) || die "No channels found in $CHANNELS_FILE"
+  pick="$(rand_int_between 1 "${#numbers[@]}")"
+  switch_and_remember_index "${numbers[$((pick-1))]}"
 }
 
 switch_from_selector_or_url() {
@@ -1001,9 +1117,10 @@ case "$COMMAND" in
     need_cmd jq
     need_cmd flock
     if [[ "$RANDOM_SWITCH" -eq 1 ]]; then
-      count="$(channel_count)"
-      (( count > 0 )) || die "No channels found in $CHANNELS_FILE"
-      RESOLVED_CHANNEL_INDEX="$(rand_int_between 1 "$count")"
+      mapfile -t RANDOM_CHANNEL_NUMBERS < <(list_active_channel_numbers 2>/dev/null)
+      (( ${#RANDOM_CHANNEL_NUMBERS[@]} > 0 )) || die "No channels found in $CHANNELS_FILE"
+      RANDOM_CHANNEL_PICK="$(rand_int_between 1 "${#RANDOM_CHANNEL_NUMBERS[@]}")"
+      RESOLVED_CHANNEL_INDEX="${RANDOM_CHANNEL_NUMBERS[$((RANDOM_CHANNEL_PICK-1))]}"
       RESOLVED_TARGET="$(channel_url_by_index "$RESOLVED_CHANNEL_INDEX")"
     elif [[ -z "$CHANNEL" && -z "$URL" ]]; then
       RESOLVED_CHANNEL_INDEX="$(get_next_channel_index)"

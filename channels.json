@@ -1,40 +1,80 @@
 {
   "channels": [
     {
-      "name": "channel-1",
-      "url": "https://www.youtube.com/watch?v=H3VvJRKZFHc"
+      "number": 1,
+      "name": "medieval-ambiance-lofi",
+      "programs": [
+        "/home/tommy/crtv/local-media/medieval-Lofi-focus_aragorn-before-the-crown.mp4",
+        "/home/tommy/crtv/local-media/Medieval-Lofi_The-Gray-Wizard-Journey.mp4"
+      ]
     },
     {
-      "name": "channel-2",
-      "url": "https://www.youtube.com/watch?v=Xzv84ZdtlE0"
+      "number": 2,
+      "name": "study-focus-lofi",
+      "programs": [
+        "/home/tommy/crtv/local-media/outdoor-focus-morning-nature-chill.mp4"
+      ]
     },
     {
-      "name": "martin-garrix-radio",
-      "url": "https://www.youtube.com/watch?v=pNNMr5glICM&list=RDpNNMr5glICM&start_radio=1"
+      "number": 3,
+      "name": "natural-environment",
+      "programs": [
+        "/home/tommy/crtv/local-media/natural-environment-river-water-asmr.mp4"
+      ]
     },
     {
-      "name": "channel-4",
-      "url": "https://www.youtube.com/watch?v=Qm5M8V0FX-s"
+      "number": 4,
+      "name": "reserved-4",
+      "disabled": true,
+      "programs": []
     },
     {
-      "name": "channel-5",
-      "url": "https://www.youtube.com/watch?v=iEX3S3FxG6Q"
+      "number": 5,
+      "name": "reserved-5",
+      "disabled": true,
+      "programs": []
     },
     {
-      "name": "channel-6",
-      "url": "https://www.youtube.com/watch?v=8Fn_30AD7Pk"
+      "number": 6,
+      "name": "sit-coms",
+      "programs": [
+        {
+          "cmd": "printf 'http://%s/library/parts/18348/1634200706/file.m4v?X-Plex-Token=%s\\n' \"$PLEX_SERVER\" \"$PLEX_TOKEN\""
+        }
+      ]
     },
     {
-      "name": "local-iceland",
-      "url": "assets/iceland-illenium-v6.mov"
+      "number": 7,
+      "name": "cartoons",
+      "programs": [
+        {
+          "cmd": "printf 'http://%s/library/parts/1241714/1658629125/file.mkv?X-Plex-Token=%s\\n' \"$PLEX_SERVER\" \"$PLEX_TOKEN\""
+        },
+        {
+          "cmd": "printf 'http://%s/library/parts/464719/1693236023/file.mkv?X-Plex-Token=%s\\n' \"$PLEX_SERVER\" \"$PLEX_TOKEN\""
+        }
+      ]
     },
     {
-      "name": "channel-8",
-      "url": "https://www.youtube.com/watch?v=vcj2iZ7kAfA"
-    },    
+      "number": 8,
+      "name": "gaming",
+      "programs": [
+        "https://www.youtube.com/watch?v=Vt7xGge5n_o"
+      ]
+    },
     {
-      "name": "channel-9",
-      "url": "https://www.youtube.com/watch?v=QJbpJQscn9E"
+      "number": 9,
+      "name": "music-media-streamed",
+      "programs": [
+        "https://www.youtube.com/watch?v=TYV3VlhWPAw"
+      ]
+    },
+    {
+      "number": 10,
+      "name": "music-media-local",
+      "programs": [
+        "/home/tommy/crtv/local-media/KOLD_something-just-like-this.mp4"
+      ]
     }
   ]
 }
