@@ -55,6 +55,12 @@ elif [[ -f "${REPO_ROOT}/.env" ]]; then
   set +a
 fi
 
+if [[ -f "${REPO_ROOT}/plex-api/.env" ]]; then
+  set -a
+  source "${REPO_ROOT}/plex-api/.env"
+  set +a
+fi
+
 : "${PROFILE:=crt-lottes}"
 : "${MPV_VO:=gpu}"
 : "${MPV_GPU_CONTEXT:=x11egl}"
@@ -1063,6 +1069,7 @@ shift || true
 CHANNEL=""
 URL=""
 RANDOM_SWITCH=0
+NO_RECOVER=0
 VOLUME_DIR=""
 VOLUME_STEP="$VOLUME_STEP_PCT"
 
@@ -1086,6 +1093,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --random)
       RANDOM_SWITCH=1
+      shift
+      ;;
+    --no-recover)
+      NO_RECOVER=1
       shift
       ;;
     --up)
@@ -1150,7 +1161,12 @@ case "$COMMAND" in
         die "switch requires --channel or --url"
       fi
     fi
-    switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" || true
+    if [[ "$NO_RECOVER" -eq 1 ]]; then
+      switch_channel_attempt "$RESOLVED_TARGET" || true
+      [[ -n "${RESOLVED_CHANNEL_INDEX:-}" ]] && remember_channel_index "$RESOLVED_CHANNEL_INDEX"
+    else
+      switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" || true
+    fi
     ;;
   run)
     need_cmd mpv

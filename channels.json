@@ -25,14 +25,12 @@
     {
       "number": 4,
       "name": "reserved-4",
-      "disabled": true,
-      "programs": []
+      "url": "assets/static.mp4"
     },
     {
       "number": 5,
       "name": "reserved-5",
-      "disabled": true,
-      "programs": []
+      "url": "assets/static.mp4"
     },
     {
       "number": 6,

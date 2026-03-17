@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import subprocess
+import threading
 import time
 from gpiozero import Button
 
@@ -15,8 +16,9 @@ MAX_CHANNEL = 10
 current_channel = 0
 
 BUTTON_BOUNCE = 0.05
-COMMAND_COOLDOWN_SECONDS = 0.15
 DETENT_TRANSITIONS = 4
+WORKER_POLL_SECONDS = 0.05
+TERMINATE_GRACE_SECONDS = 0.5
 
 # Disable the encoder switch starting playback for now.
 ENABLE_BUTTON_START = False
@@ -25,10 +27,15 @@ pin_a = Button(PIN_A, pull_up=True, bounce_time=0.001)
 pin_b = Button(PIN_B, pull_up=True, bounce_time=0.001)
 pin_sw = Button(PIN_SW, pull_up=True, bounce_time=BUTTON_BOUNCE)
 
-last_command_time = 0.0
 accumulator = 0
 last_ab = None
 start_time = time.time()
+
+state_lock = threading.Lock()
+desired_channel = 0
+active_channel = None
+active_process = None
+last_started_channel = None
 
 TRANSITIONS = {
     (0, 1): +1,
@@ -66,56 +73,113 @@ def log(msg):
     print(f"{ts()}  {msg:<34} A={a} B={b} ch={current_channel} acc={accumulator}")
 
 
-def run_cmd(args):
-    try:
-        print(f"{ts()}  RUN {' '.join(args)}")
-        result = subprocess.run(args, check=True)
-        return result.returncode == 0
-    except subprocess.CalledProcessError as e:
-        print(f"{ts()}  Command failed with exit code {e.returncode}")
-        return False
-    except Exception as e:
-        print(f"{ts()}  Command error: {e}")
-        return False
+def build_switch_args(channel):
+    return [CRT_PLAYER, "switch", "--channel", str(channel), "--no-recover"]
 
 
-def switch_channel(channel):
-    global current_channel, last_command_time
+def request_channel(channel):
+    global current_channel, desired_channel
 
-    now = time.time()
-    if now - last_command_time < COMMAND_COOLDOWN_SECONDS:
-        log("CHANNEL SWITCH COOLDOWN")
-        return
-
-    ok = run_cmd([CRT_PLAYER, "switch", "--channel", str(channel)])
-    if ok:
+    with state_lock:
         current_channel = channel
-        last_command_time = now
-        log(f"SWITCHED TO CHANNEL {channel}")
-    else:
-        log(f"SWITCH FAILED TO {channel}")
+        desired_channel = channel
+
+    log(f"TARGET CHANNEL {channel}")
 
 
 def next_channel():
     if current_channel < MIN_CHANNEL:
-        switch_channel(MIN_CHANNEL)
+        request_channel(MIN_CHANNEL)
         return
 
     new_channel = current_channel + 1
     if new_channel > MAX_CHANNEL:
         new_channel = MIN_CHANNEL
-    switch_channel(new_channel)
+    request_channel(new_channel)
 
 
 def prev_channel():
     if current_channel < MIN_CHANNEL:
-        switch_channel(MAX_CHANNEL)
+        request_channel(MAX_CHANNEL)
         return
 
     new_channel = current_channel - 1
     if new_channel < MIN_CHANNEL:
         new_channel = MAX_CHANNEL
-    switch_channel(new_channel)
+    request_channel(new_channel)
+
+
+def stop_process(proc):
+    try:
+        proc.terminate()
+        proc.wait(timeout=TERMINATE_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=TERMINATE_GRACE_SECONDS)
+    except Exception as exc:
+        print(f"{ts()}  Process stop error: {exc}")
+
+
+def switch_worker():
+    global active_channel, active_process, last_started_channel
+
+    while True:
+        completed_channel = None
+        completed_rc = None
+        interrupted_channel = None
+        start_channel = None
+        start_args = None
+
+        with state_lock:
+            proc = active_process
+            desired = desired_channel
+            active = active_channel
+
+        if proc is not None:
+            rc = proc.poll()
+            if rc is not None:
+                completed_channel = active
+                completed_rc = rc
+                with state_lock:
+                    active_process = None
+                    active_channel = None
+            elif desired not in (0, active):
+                interrupted_channel = active
+                stop_process(proc)
+                with state_lock:
+                    active_process = None
+                    active_channel = None
+
+        with state_lock:
+            proc = active_process
+            desired = desired_channel
+
+            if proc is None and desired >= MIN_CHANNEL and desired <= MAX_CHANNEL and desired != last_started_channel:
+                start_channel = desired
+                start_args = build_switch_args(desired)
+                try:
+                    active_process = subprocess.Popen(start_args)
+                    active_channel = desired
+                    last_started_channel = desired
+                except Exception as exc:
+                    print(f"{ts()}  Command error: {exc}")
+                    active_process = None
+                    active_channel = None
+
+        if interrupted_channel is not None:
+            print(f"{ts()}  INTERRUPTED SWITCH TO {interrupted_channel}")
+
+        if start_channel is not None and start_args is not None:
+            print(f"{ts()}  RUN {' '.join(start_args)}")
+
+        if completed_channel is not None:
+            if completed_rc == 0:
+                log(f"SWITCHED TO CHANNEL {completed_channel}")
+            else:
+                print(f"{ts()}  Command failed with exit code {completed_rc}")
+                log(f"SWITCH FAILED TO {completed_channel}")
+
+        time.sleep(WORKER_POLL_SECONDS)
 
 
 def handle_button_press():
@@ -175,6 +239,8 @@ pin_a.when_released = on_a_released
 pin_b.when_pressed = on_b_pressed
 pin_b.when_released = on_b_released
 pin_sw.when_pressed = handle_button_press
+
+threading.Thread(target=switch_worker, daemon=True).start()
 
 print("Encoder control started")
 print(f"Pins: A={PIN_A}, B={PIN_B}, SW={PIN_SW}")
