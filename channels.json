@@ -4,7 +4,6 @@
       "number": 1,
       "name": "medieval-ambiance-lofi",
       "programs": [
-        "/home/tommy/crtv/local-media/medieval-Lofi-focus_aragorn-before-the-crown.mp4",
         "/home/tommy/crtv/local-media/Medieval-Lofi_The-Gray-Wizard-Journey.mp4"
       ]
     },
@@ -24,51 +23,35 @@
     },
     {
       "number": 4,
-      "name": "reserved-4",
-      "url": "assets/static.mp4"
+      "name": "fireplace",
+      "url": "/mnt/usb/media/fireplace-burning.webm"
     },
     {
       "number": 5,
-      "name": "reserved-5",
-      "url": "assets/static.mp4"
+      "name": "ghibli-forest",
+      "url": "/mnt/usb/media/ghibli-inspired-forest.webm"
     },
     {
       "number": 6,
-      "name": "sit-coms",
-      "programs": [
-        {
-          "cmd": "printf 'http://%s/library/parts/18348/1634200706/file.m4v?X-Plex-Token=%s\\n' \"$PLEX_SERVER\" \"$PLEX_TOKEN\""
-        }
-      ]
+      "name": "forest-rain",
+      "url": "/mnt/usb/media/rain-forest-path.webm"
     },
     {
       "number": 7,
-      "name": "cartoons",
+      "name": "medieval",
       "programs": [
-        {
-          "cmd": "printf 'http://%s/library/parts/1241714/1658629125/file.mkv?X-Plex-Token=%s\\n' \"$PLEX_SERVER\" \"$PLEX_TOKEN\""
-        },
-        {
-          "cmd": "printf 'http://%s/library/parts/464719/1693236023/file.mkv?X-Plex-Token=%s\\n' \"$PLEX_SERVER\" \"$PLEX_TOKEN\""
-        }
+        "/home/tommy/crtv/local-media/medieval-Lofi-focus_aragorn-before-the-crown.mp4"
       ]
     },
     {
       "number": 8,
-      "name": "gaming",
-      "programs": [
-        "https://www.youtube.com/watch?v=Vt7xGge5n_o"
-      ]
-    },
-    {
-      "number": 9,
       "name": "music-media-streamed",
       "programs": [
         "https://www.youtube.com/watch?v=TYV3VlhWPAw"
       ]
     },
     {
-      "number": 10,
+      "number": 9,
       "name": "music-media-local",
       "programs": [
         "/home/tommy/crtv/local-media/KOLD_something-just-like-this.mp4"
