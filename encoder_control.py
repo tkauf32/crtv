@@ -18,6 +18,7 @@ current_channel = 0
 BUTTON_BOUNCE = 0.05
 DETENT_TRANSITIONS = 4
 WORKER_POLL_SECONDS = 0.05
+DETENT_COOLDOWN_SECONDS = 0.40
 
 # Disable the encoder switch starting playback for now.
 ENABLE_BUTTON_START = False
@@ -29,6 +30,7 @@ pin_sw = Button(PIN_SW, pull_up=True, bounce_time=BUTTON_BOUNCE)
 accumulator = 0
 last_ab = None
 start_time = time.time()
+last_detent_time = 0.0
 
 state_lock = threading.Lock()
 desired_channel = 0
@@ -114,6 +116,7 @@ def switch_worker():
     while True:
         completed_channel = None
         completed_rc = None
+        completed_desired = None
         start_channel = None
         start_args = None
 
@@ -127,6 +130,7 @@ def switch_worker():
             if rc is not None:
                 completed_channel = active
                 completed_rc = rc
+                completed_desired = desired
                 with state_lock:
                     active_process = None
                     active_channel = None
@@ -152,7 +156,10 @@ def switch_worker():
 
         if completed_channel is not None:
             if completed_rc == 0:
-                log(f"SWITCHED TO CHANNEL {completed_channel}")
+                if completed_desired == completed_channel:
+                    log(f"SWITCHED TO CHANNEL {completed_channel}")
+                else:
+                    print(f"{ts()}  STALE SWITCH COMPLETED {completed_channel} (desired {completed_desired})")
             elif completed_rc == 2:
                 print(f"{ts()}  SUPERSEDED SWITCH TO {completed_channel}")
             else:
@@ -170,7 +177,7 @@ def handle_button_press():
 
 
 def handle_ab_change(source):
-    global last_ab, accumulator
+    global last_ab, accumulator, last_detent_time
 
     current_ab = ab_value()
 
@@ -190,10 +197,20 @@ def handle_ab_change(source):
 
     if accumulator >= DETENT_TRANSITIONS:
         accumulator = 0
+        now = time.time()
+        if now - last_detent_time < DETENT_COOLDOWN_SECONDS:
+            log("DETENT CW IGNORED")
+            return
+        last_detent_time = now
         log("DETENT CW")
         next_channel()
     elif accumulator <= -DETENT_TRANSITIONS:
         accumulator = 0
+        now = time.time()
+        if now - last_detent_time < DETENT_COOLDOWN_SECONDS:
+            log("DETENT CCW IGNORED")
+            return
+        last_detent_time = now
         log("DETENT CCW")
         prev_channel()
 
