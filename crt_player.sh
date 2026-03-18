@@ -96,6 +96,10 @@ fi
 : "${AUTO_RECOVER_SHELL:=1}"
 : "${SWITCH_LOCK_FILE:=/tmp/crt_player_switch.lock}"
 : "${SWITCH_LOCK_WAIT_SECONDS:=30}"
+: "${CHANNEL_OSD_ENABLED:=1}"
+: "${CHANNEL_OSD_DURATION_MS:=5000}"
+: "${CHANNEL_OSD_FONT_SIZE:=24}"
+: "${CHANNEL_OSD_MARGIN_Y:=54}"
 : "${DEFAULT_START_CHANNEL:=1}"
 : "${KEY_NEXT:=n}"
 : "${KEY_PREV:=p}"
@@ -136,6 +140,7 @@ Env:
   RESOLUTION, YTDL_MAX_FPS, PROFILE, MPV_VO, MPV_GPU_CONTEXT, MPV_HWDEC, VF_CHAIN,
   DISPLAY, XAUTHORITY, LOG_LEVEL, LOG_FILE, LOG_FILE_LEVEL, LOG_TO_STDERR, MPV_LOG_FILE, MPV_LOG_LEVEL,
   MPV_LOG_EXCERPT_LINES, SWITCH_LOCK_FILE, SWITCH_LOCK_WAIT_SECONDS,
+  CHANNEL_OSD_ENABLED, CHANNEL_OSD_DURATION_MS, CHANNEL_OSD_FONT_SIZE, CHANNEL_OSD_MARGIN_Y,
   DEFAULT_START_CHANNEL, KEY_NEXT, KEY_PREV, KEY_RANDOM, KEY_QUIT, INPUT_EVENT_CMD,
   AMIXER_BIN, AMIXER_CONTROL, VOLUME_STEP_PCT
 USAGE
@@ -500,6 +505,19 @@ play_static_now() {
   mpv_send_json "$(jq -nc '{"command":["set_property", "loop-file", "inf"]}')" || true
 }
 
+show_channel_overlay() {
+  local channel_number="$1"
+
+  is_true "$CHANNEL_OSD_ENABLED" || return 0
+  is_int "$channel_number" || return 0
+
+  mpv_send_json "$(jq -nc --argjson n "$CHANNEL_OSD_FONT_SIZE" '{"command":["set_property", "osd-font-size", $n]}')" || true
+  mpv_send_json "$(jq -nc --arg v "center" '{"command":["set_property", "osd-align-x", $v]}')" || true
+  mpv_send_json "$(jq -nc --arg v "top" '{"command":["set_property", "osd-align-y", $v]}')" || true
+  mpv_send_json "$(jq -nc --argjson n "$CHANNEL_OSD_MARGIN_Y" '{"command":["set_property", "osd-margin-y", $n]}')" || true
+  mpv_send_json "$(jq -nc --arg msg "CH ${channel_number}" --argjson ms "$CHANNEL_OSD_DURATION_MS" '{"command":["show-text", $msg, $ms] }')" || true
+}
+
 switch_channel_attempt() {
   local target="$1"
   local static_seconds
@@ -571,6 +589,7 @@ switch_with_recovery() {
 
   if switch_channel_attempt "$target"; then
     [[ "$from_index" -gt 0 ]] && remember_channel_index "$from_index"
+    [[ "$from_index" -gt 0 ]] && show_channel_overlay "$from_index"
     rc=0
     flock -u "$lock_fd" || true
     exec {lock_fd}>&-
@@ -620,6 +639,7 @@ switch_with_recovery() {
     log_msg warn "recovery attempt=$tries channel_index=$idx"
     if switch_channel_attempt "$candidate_target"; then
       remember_channel_index "$idx"
+      show_channel_overlay "$idx"
       log_msg warn "recovered playback on channel_index=$idx"
       rc=0
       flock -u "$lock_fd" || true
@@ -1163,7 +1183,10 @@ case "$COMMAND" in
     fi
     if [[ "$NO_RECOVER" -eq 1 ]]; then
       switch_channel_attempt "$RESOLVED_TARGET" || true
-      [[ -n "${RESOLVED_CHANNEL_INDEX:-}" ]] && remember_channel_index "$RESOLVED_CHANNEL_INDEX"
+      if [[ -n "${RESOLVED_CHANNEL_INDEX:-}" ]]; then
+        remember_channel_index "$RESOLVED_CHANNEL_INDEX"
+        show_channel_overlay "$RESOLVED_CHANNEL_INDEX"
+      fi
     else
       switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" || true
     fi
