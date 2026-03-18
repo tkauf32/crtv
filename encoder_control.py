@@ -18,7 +18,6 @@ current_channel = 0
 BUTTON_BOUNCE = 0.05
 DETENT_TRANSITIONS = 4
 WORKER_POLL_SECONDS = 0.05
-TERMINATE_GRACE_SECONDS = 0.5
 
 # Disable the encoder switch starting playback for now.
 ENABLE_BUTTON_START = False
@@ -109,24 +108,12 @@ def prev_channel():
     request_channel(new_channel)
 
 
-def stop_process(proc):
-    try:
-        proc.terminate()
-        proc.wait(timeout=TERMINATE_GRACE_SECONDS)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=TERMINATE_GRACE_SECONDS)
-    except Exception as exc:
-        print(f"{ts()}  Process stop error: {exc}")
-
-
 def switch_worker():
     global active_channel, active_process, last_started_channel
 
     while True:
         completed_channel = None
         completed_rc = None
-        interrupted_channel = None
         start_channel = None
         start_args = None
 
@@ -140,12 +127,6 @@ def switch_worker():
             if rc is not None:
                 completed_channel = active
                 completed_rc = rc
-                with state_lock:
-                    active_process = None
-                    active_channel = None
-            elif desired not in (0, active):
-                interrupted_channel = active
-                stop_process(proc)
                 with state_lock:
                     active_process = None
                     active_channel = None
@@ -166,15 +147,14 @@ def switch_worker():
                     active_process = None
                     active_channel = None
 
-        if interrupted_channel is not None:
-            print(f"{ts()}  INTERRUPTED SWITCH TO {interrupted_channel}")
-
         if start_channel is not None and start_args is not None:
             print(f"{ts()}  RUN {' '.join(start_args)}")
 
         if completed_channel is not None:
             if completed_rc == 0:
                 log(f"SWITCHED TO CHANNEL {completed_channel}")
+            elif completed_rc == 2:
+                print(f"{ts()}  SUPERSEDED SWITCH TO {completed_channel}")
             else:
                 print(f"{ts()}  Command failed with exit code {completed_rc}")
                 log(f"SWITCH FAILED TO {completed_channel}")
@@ -251,6 +231,7 @@ print(f"Button start enabled: {ENABLE_BUTTON_START}")
 
 last_ab = ab_value()
 log("INITIAL")
+request_channel(MIN_CHANNEL)
 
 try:
     while True:

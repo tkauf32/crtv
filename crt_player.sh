@@ -96,6 +96,7 @@ fi
 : "${AUTO_RECOVER_SHELL:=1}"
 : "${SWITCH_LOCK_FILE:=/tmp/crt_player_switch.lock}"
 : "${SWITCH_LOCK_WAIT_SECONDS:=30}"
+: "${SWITCH_REQUEST_FILE:=/tmp/crt_player_switch.request}"
 : "${CHANNEL_OSD_ENABLED:=1}"
 : "${CHANNEL_OSD_DURATION_MS:=5000}"
 : "${CHANNEL_OSD_FONT_SIZE:=24}"
@@ -139,7 +140,7 @@ Env:
   ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, CHANNEL_INDEX_FILE, PROGRAM_INDEX_DIR,
   RESOLUTION, YTDL_MAX_FPS, PROFILE, MPV_VO, MPV_GPU_CONTEXT, MPV_HWDEC, VF_CHAIN,
   DISPLAY, XAUTHORITY, LOG_LEVEL, LOG_FILE, LOG_FILE_LEVEL, LOG_TO_STDERR, MPV_LOG_FILE, MPV_LOG_LEVEL,
-  MPV_LOG_EXCERPT_LINES, SWITCH_LOCK_FILE, SWITCH_LOCK_WAIT_SECONDS,
+  MPV_LOG_EXCERPT_LINES, SWITCH_LOCK_FILE, SWITCH_LOCK_WAIT_SECONDS, SWITCH_REQUEST_FILE,
   CHANNEL_OSD_ENABLED, CHANNEL_OSD_DURATION_MS, CHANNEL_OSD_FONT_SIZE, CHANNEL_OSD_MARGIN_Y,
   DEFAULT_START_CHANNEL, KEY_NEXT, KEY_PREV, KEY_RANDOM, KEY_QUIT, INPUT_EVENT_CMD,
   AMIXER_BIN, AMIXER_CONTROL, VOLUME_STEP_PCT
@@ -265,6 +266,7 @@ build_mpv_args() {
     "--interpolation=no"
     "--video-sync=audio"
     "--cache=yes"
+    "--keep-open=yes"
     "--demuxer-max-bytes=50MiB"
     "--demuxer-max-back-bytes=10MiB"
     "--scale=bilinear"
@@ -308,6 +310,42 @@ mpv_get_property_json() {
   printf '%s\n' "$resp" \
     | jq -rc 'select(type == "object" and .error == "success") | .data' \
     | tail -n1
+}
+
+new_switch_request_token() {
+  printf '%s-%s\n' "$$" "$(date +%s%N)"
+}
+
+set_switch_request_token() {
+  local token="$1"
+  printf '%s\n' "$token" > "$SWITCH_REQUEST_FILE"
+}
+
+is_switch_request_current() {
+  local token="$1"
+  local current=""
+  [[ -n "$token" ]] || return 0
+  [[ -f "$SWITCH_REQUEST_FILE" ]] || return 0
+  current="$(cat "$SWITCH_REQUEST_FILE" 2>/dev/null || true)"
+  [[ "$current" == "$token" ]]
+}
+
+sleep_interruptible() {
+  local seconds="$1"
+  local token="${2:-}"
+  local steps=0
+
+  if ! awk "BEGIN { exit !(${seconds} > 0) }"; then
+    return 0
+  fi
+
+  steps="$(awk "BEGIN { printf \"%d\", ((${seconds}) * 20) + 0.999 }")"
+  (( steps > 0 )) || steps=1
+
+  for _ in $(seq 1 "$steps"); do
+    is_switch_request_current "$token" || return 1
+    sleep 0.05
+  done
 }
 
 log_mpv_excerpt() {
@@ -467,6 +505,7 @@ maybe_random_seek() {
 }
 
 wait_for_target_ready() {
+  local request_token="${1:-}"
   local steps
   local paused
   local ptime
@@ -475,6 +514,7 @@ wait_for_target_ready() {
   (( steps > 0 )) || return 0
 
   for _ in $(seq 1 "$steps"); do
+    is_switch_request_current "$request_token" || return 2
     paused="$(mpv_get_property "paused-for-cache" || true)"
     ptime="$(mpv_get_property "playback-time" || true)"
 
@@ -520,6 +560,7 @@ show_channel_overlay() {
 
 switch_channel_attempt() {
   local target="$1"
+  local request_token="${2:-}"
   local static_seconds
   local source_kind="local"
   local switch_started_at
@@ -541,22 +582,27 @@ switch_channel_attempt() {
 
   ensure_shell
   apply_runtime_source_options "$target"
+  is_switch_request_current "$request_token" || return 2
 
   log_msg info "switch begin source=${source_kind} static=${static_seconds}s"
   play_static_now
 
-  sleep "$static_seconds"
+  sleep_interruptible "$static_seconds" "$request_token" || return 2
 
+  is_switch_request_current "$request_token" || return 2
   mpv_send_json "$(jq -nc --arg u "$target" '{"command":["loadfile", $u, "replace"]}')" || true
   mpv_send_json "$(jq -nc '{"command":["set_property", "loop-file", "no"]}')" || true
 
-  sleep 0.20
+  sleep_interruptible 0.20 "$request_token" || return 2
   mpv_send_json "$(jq -nc --arg vf "$VF_CHAIN" '{"command":["vf", "set", $vf]}')" || true
 
-  if wait_for_target_ready; then
+  if wait_for_target_ready "$request_token"; then
     wait_ok=1
   else
-    ready_status="timeout"
+    case "$?" in
+      2) return 2 ;;
+      *) ready_status="timeout" ;;
+    esac
   fi
 
   if [[ "$wait_ok" -ne 1 ]]; then
@@ -575,6 +621,7 @@ switch_channel_attempt() {
 switch_with_recovery() {
   local target="$1"
   local from_index="${2:-0}"
+  local request_token="${3:-}"
   local tries max_tries idx candidate_target
   local lock_fd
   local numbers=()
@@ -587,13 +634,21 @@ switch_with_recovery() {
     die "Timed out waiting for switch lock: $SWITCH_LOCK_FILE"
   fi
 
-  if switch_channel_attempt "$target"; then
+  if switch_channel_attempt "$target" "$request_token"; then
     [[ "$from_index" -gt 0 ]] && remember_channel_index "$from_index"
     [[ "$from_index" -gt 0 ]] && show_channel_overlay "$from_index"
     rc=0
     flock -u "$lock_fd" || true
     exec {lock_fd}>&-
     return "$rc"
+  else
+    case "$?" in
+      2)
+        flock -u "$lock_fd" || true
+        exec {lock_fd}>&-
+        return 2
+        ;;
+    esac
   fi
 
   if ! is_true "$RECOVER_TO_NEXT_ON_FAILURE"; then
@@ -629,6 +684,11 @@ switch_with_recovery() {
   done
 
   for tries in $(seq 1 "$max_tries"); do
+    is_switch_request_current "$request_token" || {
+      flock -u "$lock_fd" || true
+      exec {lock_fd}>&-
+      return 2
+    }
     if (( ${#numbers[@]} == 0 )); then
       break
     fi
@@ -637,7 +697,7 @@ switch_with_recovery() {
     candidate_target="$(channel_url_by_index "$idx" 2>/dev/null || true)"
     [[ -n "$candidate_target" ]] || continue
     log_msg warn "recovery attempt=$tries channel_index=$idx"
-    if switch_channel_attempt "$candidate_target"; then
+    if switch_channel_attempt "$candidate_target" "$request_token"; then
       remember_channel_index "$idx"
       show_channel_overlay "$idx"
       log_msg warn "recovered playback on channel_index=$idx"
@@ -645,6 +705,14 @@ switch_with_recovery() {
       flock -u "$lock_fd" || true
       exec {lock_fd}>&-
       return "$rc"
+    else
+      case "$?" in
+        2)
+          flock -u "$lock_fd" || true
+          exec {lock_fd}>&-
+          return 2
+          ;;
+      esac
     fi
   done
 
@@ -1086,6 +1154,7 @@ COMMAND="${1:-}"
 }
 shift || true
 
+REQUEST_TOKEN=""
 CHANNEL=""
 URL=""
 RANDOM_SWITCH=0
@@ -1153,9 +1222,11 @@ case "$COMMAND" in
     need_cmd socat
     need_cmd jq
     need_cmd flock
+    REQUEST_TOKEN="$(new_switch_request_token)"
+    set_switch_request_token "$REQUEST_TOKEN"
     ensure_shell
     if resolve_target "$CHANNEL" "$URL"; then
-      [[ -n "$RESOLVED_TARGET" ]] && switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" || true
+      [[ -n "$RESOLVED_TARGET" ]] && switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" "$REQUEST_TOKEN"
     fi
     ;;
   switch)
@@ -1163,6 +1234,8 @@ case "$COMMAND" in
     need_cmd socat
     need_cmd jq
     need_cmd flock
+    REQUEST_TOKEN="$(new_switch_request_token)"
+    set_switch_request_token "$REQUEST_TOKEN"
     if [[ "$RANDOM_SWITCH" -eq 1 ]]; then
       mapfile -t RANDOM_CHANNEL_NUMBERS < <(list_active_channel_numbers 2>/dev/null)
       (( ${#RANDOM_CHANNEL_NUMBERS[@]} > 0 )) || die "No channels found in $CHANNELS_FILE"
@@ -1182,13 +1255,16 @@ case "$COMMAND" in
       fi
     fi
     if [[ "$NO_RECOVER" -eq 1 ]]; then
-      switch_channel_attempt "$RESOLVED_TARGET" || true
-      if [[ -n "${RESOLVED_CHANNEL_INDEX:-}" ]]; then
-        remember_channel_index "$RESOLVED_CHANNEL_INDEX"
-        show_channel_overlay "$RESOLVED_CHANNEL_INDEX"
+      if switch_channel_attempt "$RESOLVED_TARGET" "$REQUEST_TOKEN"; then
+        if [[ -n "${RESOLVED_CHANNEL_INDEX:-}" ]]; then
+          remember_channel_index "$RESOLVED_CHANNEL_INDEX"
+          show_channel_overlay "$RESOLVED_CHANNEL_INDEX"
+        fi
+      else
+        exit "$?"
       fi
     else
-      switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" || true
+      switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_CHANNEL_INDEX:-0}" "$REQUEST_TOKEN"
     fi
     ;;
   run)
