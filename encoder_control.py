@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
+import json
 import subprocess
 import threading
 import time
+import uuid
+from pathlib import Path
 from gpiozero import Button
 
 PIN_A = 17
@@ -10,9 +13,11 @@ PIN_B = 27
 PIN_SW = 22
 
 CRT_PLAYER = "/home/tommy/crtv/crt_player.sh"
+CHANNELS_FILE = "/home/tommy/crtv/channels.json"
+SWITCH_REQUEST_FILE = "/tmp/crt_player_switch.request"
 
 MIN_CHANNEL = 1
-MAX_CHANNEL = 10
+MAX_CHANNEL = 1
 current_channel = 0
 
 BUTTON_BOUNCE = 0.05
@@ -37,6 +42,7 @@ desired_channel = 0
 active_channel = None
 active_process = None
 last_started_channel = None
+active_channel_numbers = []
 
 TRANSITIONS = {
     (0, 1): +1,
@@ -74,6 +80,53 @@ def log(msg):
     print(f"{ts()}  {msg:<34} A={a} B={b} ch={current_channel} acc={accumulator}")
 
 
+def load_active_channel_numbers():
+    global active_channel_numbers, MIN_CHANNEL, MAX_CHANNEL
+
+    with open(CHANNELS_FILE, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+
+    channels = payload.get("channels", [])
+    numbers = []
+
+    for index, channel in enumerate(channels, start=1):
+        if isinstance(channel, dict) and channel.get("disabled", False):
+            continue
+        if isinstance(channel, dict):
+            number = channel.get("number", index)
+        else:
+            number = index
+        if isinstance(number, int):
+            numbers.append(number)
+
+    numbers = sorted(set(numbers))
+    if not numbers:
+        raise RuntimeError("No active channels found in channels.json")
+
+    active_channel_numbers = numbers
+    MIN_CHANNEL = numbers[0]
+    MAX_CHANNEL = numbers[-1]
+
+
+def next_configured_channel(channel):
+    for candidate in active_channel_numbers:
+        if candidate > channel:
+            return candidate
+    return active_channel_numbers[0]
+
+
+def prev_configured_channel(channel):
+    for candidate in reversed(active_channel_numbers):
+        if candidate < channel:
+            return candidate
+    return active_channel_numbers[-1]
+
+
+def write_switch_request_token():
+    token = f"encoder-{uuid.uuid4()}"
+    Path(SWITCH_REQUEST_FILE).write_text(token, encoding="utf-8")
+
+
 def build_switch_args(channel):
     return [CRT_PLAYER, "switch", "--channel", str(channel), "--no-recover"]
 
@@ -85,6 +138,7 @@ def request_channel(channel):
         current_channel = channel
         desired_channel = channel
 
+    write_switch_request_token()
     log(f"TARGET CHANNEL {channel}")
 
 
@@ -93,10 +147,7 @@ def next_channel():
         request_channel(MIN_CHANNEL)
         return
 
-    new_channel = current_channel + 1
-    if new_channel > MAX_CHANNEL:
-        new_channel = MIN_CHANNEL
-    request_channel(new_channel)
+    request_channel(next_configured_channel(current_channel))
 
 
 def prev_channel():
@@ -104,10 +155,7 @@ def prev_channel():
         request_channel(MAX_CHANNEL)
         return
 
-    new_channel = current_channel - 1
-    if new_channel < MIN_CHANNEL:
-        new_channel = MAX_CHANNEL
-    request_channel(new_channel)
+    request_channel(prev_configured_channel(current_channel))
 
 
 def switch_worker():
@@ -163,8 +211,11 @@ def switch_worker():
             elif completed_rc == 2:
                 print(f"{ts()}  SUPERSEDED SWITCH TO {completed_channel}")
             else:
-                print(f"{ts()}  Command failed with exit code {completed_rc}")
-                log(f"SWITCH FAILED TO {completed_channel}")
+                if completed_desired == completed_channel:
+                    print(f"{ts()}  Command failed with exit code {completed_rc}")
+                    log(f"SWITCH FAILED TO {completed_channel}")
+                else:
+                    print(f"{ts()}  STALE SWITCH FAILED {completed_channel} rc={completed_rc} (desired {completed_desired})")
 
         time.sleep(WORKER_POLL_SECONDS)
 
@@ -238,11 +289,12 @@ pin_b.when_released = on_b_released
 pin_sw.when_pressed = handle_button_press
 
 threading.Thread(target=switch_worker, daemon=True).start()
+load_active_channel_numbers()
 
 print("Encoder control started")
 print(f"Pins: A={PIN_A}, B={PIN_B}, SW={PIN_SW}")
 print(f"Player path: {CRT_PLAYER}")
-print(f"Channels: {MIN_CHANNEL}..{MAX_CHANNEL}")
+print(f"Channels: {active_channel_numbers}")
 print(f"Detent transitions: {DETENT_TRANSITIONS}")
 print(f"Button start enabled: {ENABLE_BUTTON_START}")
 
