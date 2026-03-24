@@ -91,6 +91,7 @@ Important env vars:
 - `ENABLE_CROP_FILTER`
 - `CROP_X_PCT`
 - `CROP_FILTER`
+- `KEEP_ASPECT`
 - `ENABLE_RANDOM_START`
 - `DEFAULT_START_VIBE`
 - `DEFAULT_START_CHANNEL`
@@ -105,8 +106,8 @@ Important env vars:
 - Encoder 2 on `GPIO23/24/25` changes programs inside the current vibe.
 
 ## Defaults
-- Crop-to-fill is on by default so the screen fills vertically.
-- The crop is slightly right-biased by default with `CROP_X_PCT=55`.
+- Aspect preservation is off by default with `KEEP_ASPECT=no`, so playback stretches edge-to-edge.
+- Crop is off by default.
 - Playback downsampling stays on by default with `DOWNSAMPLE_HEIGHT=240`.
 - Random clip starts are on by default.
 

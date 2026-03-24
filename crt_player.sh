@@ -21,9 +21,10 @@ set -euo pipefail
 #   RANDOM_START_MIN_PCT       Default: 20
 #   RANDOM_START_MAX_PCT       Default: 80
 #   DOWNSAMPLE_HEIGHT          Playback downsample target height. Default: 240
-#   ENABLE_CROP_FILTER         Apply optional crop filter: 1|0 (default: 1)
+#   ENABLE_CROP_FILTER         Apply optional crop filter: 1|0 (default: 0)
 #   CROP_X_PCT                Horizontal crop anchor percent. Default: 55
 #   CROP_FILTER                Optional explicit crop filter override
+#   KEEP_ASPECT               Preserve aspect ratio: yes|no (default: no)
 #   VIBE_INDEX_FILE            Tracks current tuned vibe number
 #   CHANNEL_INDEX_DIR          Tracks current tuned channel per vibe
 #   PROGRAM_ORDER_RANDOM      Randomize directory-backed program order: 1|0
@@ -82,9 +83,10 @@ fi
 : "${MPV_HWDEC:=auto}"
 : "${VF_CHAIN:=}"
 : "${DOWNSAMPLE_HEIGHT:=240}"
-: "${ENABLE_CROP_FILTER:=1}"
+: "${ENABLE_CROP_FILTER:=0}"
 : "${CROP_X_PCT:=55}"
 : "${CROP_FILTER:=}"
+: "${KEEP_ASPECT:=no}"
 : "${DISPLAY:=:0}"
 : "${XAUTHORITY:=${HOME}/.Xauthority}"
 : "${TV_SOCK:=/tmp/crt_player.sock}"
@@ -160,7 +162,7 @@ Env:
   STATIC_REMOTE_SECONDS, STATIC_LOCAL_SECONDS, STATIC_VF_CHAIN,
   AUTO_ADVANCE_ON_END, AUTO_ADVANCE_POLL_SECONDS,
   RECOVER_TO_NEXT_ON_FAILURE, MAX_RECOVERY_CHANNEL_TRIES, AUTO_RECOVER_SHELL,
-  ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, DOWNSAMPLE_HEIGHT, ENABLE_CROP_FILTER, CROP_X_PCT, CROP_FILTER,
+  ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, DOWNSAMPLE_HEIGHT, ENABLE_CROP_FILTER, CROP_X_PCT, CROP_FILTER, KEEP_ASPECT,
   VIBE_INDEX_FILE, CHANNEL_INDEX_DIR, PROGRAM_INDEX_DIR, PROGRAM_ORDER_RANDOM,
   RESOLUTION, YTDL_MAX_FPS, PROFILE, MPV_VO, MPV_GPU_CONTEXT, MPV_HWDEC, VF_CHAIN,
   DISPLAY, XAUTHORITY, LOG_LEVEL, LOG_FILE, LOG_FILE_LEVEL, LOG_TO_STDERR, MPV_LOG_FILE, MPV_LOG_LEVEL,
@@ -332,6 +334,7 @@ build_mpv_args() {
     "--vd-lavc-skiploopfilter=all"
     "--vd-lavc-fast"
     "--fullscreen"
+    "--keepaspect=${KEEP_ASPECT}"
     "--profile=${PROFILE}"
     "--interpolation=no"
     "--video-sync=audio"
