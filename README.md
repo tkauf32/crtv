@@ -104,7 +104,7 @@ Important env vars:
 - Encoder 2 on `GPIO23/24/25` changes programs inside the current vibe.
 
 ## Defaults
-- Crop/squeeze is off by default.
+- Crop-to-fill is on by default so the screen fills vertically.
 - Playback downsampling stays on by default with `DOWNSAMPLE_HEIGHT=240`.
 - Random clip starts are on by default.
 

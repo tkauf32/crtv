@@ -21,7 +21,7 @@ set -euo pipefail
 #   RANDOM_START_MIN_PCT       Default: 20
 #   RANDOM_START_MAX_PCT       Default: 80
 #   DOWNSAMPLE_HEIGHT          Playback downsample target height. Default: 240
-#   ENABLE_CROP_FILTER         Apply optional crop filter: 1|0 (default: 0)
+#   ENABLE_CROP_FILTER         Apply optional crop filter: 1|0 (default: 1)
 #   CROP_FILTER                Crop filter used when ENABLE_CROP_FILTER=1
 #   VIBE_INDEX_FILE            Tracks current tuned vibe number
 #   CHANNEL_INDEX_DIR          Tracks current tuned channel per vibe
@@ -81,7 +81,7 @@ fi
 : "${MPV_HWDEC:=auto}"
 : "${VF_CHAIN:=}"
 : "${DOWNSAMPLE_HEIGHT:=240}"
-: "${ENABLE_CROP_FILTER:=0}"
+: "${ENABLE_CROP_FILTER:=1}"
 : "${CROP_FILTER:=crop=ih*4/3:ih}"
 : "${DISPLAY:=:0}"
 : "${XAUTHORITY:=${HOME}/.Xauthority}"
