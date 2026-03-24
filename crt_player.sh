@@ -562,17 +562,21 @@ play_static_now() {
 
 show_channel_overlay() {
   local vibe_number="$1"
-  local channel_number="$2"
+  local channel_number="${2:-0}"
 
   is_true "$CHANNEL_OSD_ENABLED" || return 0
   is_int "$vibe_number" || return 0
-  is_int "$channel_number" || return 0
+  is_int "$channel_number" || channel_number=0
 
   mpv_send_json "$(jq -nc --argjson n "$CHANNEL_OSD_FONT_SIZE" '{"command":["set_property", "osd-font-size", $n]}')" || true
   mpv_send_json "$(jq -nc --arg v "center" '{"command":["set_property", "osd-align-x", $v]}')" || true
   mpv_send_json "$(jq -nc --arg v "top" '{"command":["set_property", "osd-align-y", $v]}')" || true
   mpv_send_json "$(jq -nc --argjson n "$CHANNEL_OSD_MARGIN_Y" '{"command":["set_property", "osd-margin-y", $n]}')" || true
-  mpv_send_json "$(jq -nc --arg msg "V${vibe_number} CH ${channel_number}" --argjson ms "$CHANNEL_OSD_DURATION_MS" '{"command":["show-text", $msg, $ms] }')" || true
+  if (( channel_number > 0 )); then
+    mpv_send_json "$(jq -nc --arg msg "V${vibe_number} CH ${channel_number}" --argjson ms "$CHANNEL_OSD_DURATION_MS" '{"command":["show-text", $msg, $ms] }')" || true
+  else
+    mpv_send_json "$(jq -nc --arg msg "V${vibe_number}" --argjson ms "$CHANNEL_OSD_DURATION_MS" '{"command":["show-text", $msg, $ms] }')" || true
+  fi
 }
 
 switch_channel_attempt() {
@@ -653,10 +657,12 @@ switch_with_recovery() {
   fi
 
   if switch_channel_attempt "$target" "$request_token"; then
-    if [[ "$from_vibe" -gt 0 && "$from_channel" -gt 0 ]]; then
+    if [[ "$from_vibe" -gt 0 ]]; then
       remember_vibe_index "$from_vibe"
-      remember_channel_index "$from_vibe" "$from_channel"
       show_channel_overlay "$from_vibe" "$from_channel"
+    fi
+    if [[ "$from_vibe" -gt 0 && "$from_channel" -gt 0 ]]; then
+      remember_channel_index "$from_vibe" "$from_channel"
     fi
     rc=0
     flock -u "$lock_fd" || true
@@ -817,6 +823,12 @@ program_state_file_for_channel() {
   printf '%s/vibe_%s_channel_%s.index\n' "$PROGRAM_INDEX_DIR" "$vibe_idx" "$channel_number"
 }
 
+vibe_program_state_file() {
+  local vibe_idx="$1"
+  mkdir -p "$PROGRAM_INDEX_DIR" >/dev/null 2>&1 || true
+  printf '%s/vibe_%s.index\n' "$PROGRAM_INDEX_DIR" "$vibe_idx"
+}
+
 channel_entry_by_index() {
   local vibe_idx="$1"
   local channel_idx="$2"
@@ -942,6 +954,84 @@ channel_program_targets() {
   else
     printf '%s\n' "${targets[@]}"
   fi
+}
+
+vibe_program_targets() {
+  local vibe_idx="$1"
+  local channel_numbers=()
+  local channel_idx=""
+  local entry_json=""
+  local targets=()
+  local target=""
+
+  mapfile -t channel_numbers < <(list_active_channel_numbers_for_vibe "$vibe_idx" 2>/dev/null || true)
+  (( ${#channel_numbers[@]} > 0 )) || return 1
+
+  for channel_idx in "${channel_numbers[@]}"; do
+    entry_json="$(channel_entry_by_index "$vibe_idx" "$channel_idx")"
+    [[ -n "$entry_json" ]] || continue
+    mapfile -t targets < <(channel_program_targets "$entry_json" 2>/dev/null || true)
+    for target in "${targets[@]}"; do
+      [[ -n "$target" ]] || continue
+      printf '%s\t%s\n' "$channel_idx" "$target"
+    done
+  done
+}
+
+read_vibe_program_index() {
+  local vibe_idx="$1"
+  local program_count="$2"
+  local state_file=""
+  local current_program=1
+
+  state_file="$(vibe_program_state_file "$vibe_idx")"
+  if [[ -f "$state_file" ]]; then
+    current_program="$(cat "$state_file" 2>/dev/null || echo 1)"
+  fi
+
+  is_int "$current_program" || current_program=1
+  (( current_program >= 1 )) || current_program=1
+  (( current_program <= program_count )) || current_program=$(( ((current_program - 1) % program_count) + 1 ))
+
+  printf '%s\n' "$current_program"
+}
+
+write_vibe_program_index() {
+  local vibe_idx="$1"
+  local program_index="$2"
+  local state_file=""
+
+  state_file="$(vibe_program_state_file "$vibe_idx")"
+  printf '%s\n' "$program_index" > "$state_file"
+}
+
+resolve_vibe_program() {
+  local vibe_idx="$1"
+  local program_delta="${2:-0}"
+  local entries=()
+  local current_program=1
+  local next_program=1
+
+  mapfile -t entries < <(vibe_program_targets "$vibe_idx" 2>/dev/null || true)
+  (( ${#entries[@]} > 0 )) || return 1
+
+  current_program="$(read_vibe_program_index "$vibe_idx" "${#entries[@]}")"
+  if [[ "$program_delta" =~ ^-?[0-9]+$ ]] && (( program_delta != 0 )); then
+    next_program=$(( ((current_program - 1 + program_delta) % ${#entries[@]} + ${#entries[@]}) % ${#entries[@]} + 1 ))
+  else
+    next_program="$current_program"
+  fi
+
+  write_vibe_program_index "$vibe_idx" "$next_program"
+  printf '%s\n' "${entries[$((next_program - 1))]}"
+}
+
+vibe_has_program_catalog() {
+  local vibe_idx="$1"
+  local entries=()
+
+  mapfile -t entries < <(vibe_program_targets "$vibe_idx" 2>/dev/null || true)
+  (( ${#entries[@]} > 0 ))
 }
 
 channel_has_program_catalog() {
@@ -1170,6 +1260,27 @@ current_selection() {
   printf '%s %s\n' "$vibe_idx" "$channel_idx"
 }
 
+current_vibe_with_programs() {
+  local vibe_idx=""
+  local vibe_numbers=()
+
+  vibe_idx="$(current_vibe_index || true)"
+  if [[ -n "$vibe_idx" ]] && vibe_has_program_catalog "$vibe_idx"; then
+    printf '%s\n' "$vibe_idx"
+    return 0
+  fi
+
+  mapfile -t vibe_numbers < <(list_active_vibe_numbers 2>/dev/null)
+  for vibe_idx in "${vibe_numbers[@]}"; do
+    if vibe_has_program_catalog "$vibe_idx"; then
+      printf '%s\n' "$vibe_idx"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 get_next_vibe_index() {
   local numbers=()
   local current=0
@@ -1306,6 +1417,7 @@ resolve_target() {
   local url="${3-}"
   local vibe_idx=""
   local channel_idx=""
+  local entry=""
   local selection=""
 
   RESOLVED_TARGET=""
@@ -1345,12 +1457,16 @@ resolve_target() {
     return 1
   fi
 
-  selection="$(current_selection "$vibe_idx" || true)"
-  [[ -n "$selection" ]] || return 1
+  if [[ -z "$vibe_idx" ]]; then
+    vibe_idx="$(current_vibe_with_programs || true)"
+  fi
+  [[ -n "$vibe_idx" ]] || return 1
 
-  RESOLVED_VIBE_INDEX="${selection%% *}"
-  RESOLVED_CHANNEL_INDEX="${selection##* }"
-  RESOLVED_TARGET="$(channel_url_by_index "$RESOLVED_VIBE_INDEX" "$RESOLVED_CHANNEL_INDEX")"
+  entry="$(resolve_vibe_program "$vibe_idx" 0 || true)"
+  [[ -n "$entry" ]] || return 1
+  RESOLVED_VIBE_INDEX="$vibe_idx"
+  RESOLVED_CHANNEL_INDEX="${entry%%$'\t'*}"
+  RESOLVED_TARGET="${entry#*$'\t'}"
   return 0
 }
 
@@ -1364,32 +1480,33 @@ switch_and_remember_selection() {
 
 switch_program_relative() {
   local delta="$1"
-  local selection=""
   local vibe_idx=""
-  local channel_idx=""
+  local entry=""
   local target=""
 
-  selection="$(current_selection || true)"
-  if [[ -z "$selection" ]]; then
-    log_msg warn "program switch ignored: no current selection"
+  vibe_idx="$(current_vibe_with_programs || true)"
+  if [[ -z "$vibe_idx" ]]; then
+    log_msg warn "program switch ignored: no current vibe"
     return 1
   fi
 
-  vibe_idx="${selection%% *}"
-  channel_idx="${selection##* }"
-
-  if ! channel_has_program_catalog "$vibe_idx" "$channel_idx"; then
-    log_msg warn "program switch ignored: vibe=${vibe_idx} channel=${channel_idx} has no program catalog"
+  if ! vibe_has_program_catalog "$vibe_idx"; then
+    log_msg warn "program switch ignored: vibe=${vibe_idx} has no program catalog"
     return 1
   fi
 
-  target="$(channel_url_by_index "$vibe_idx" "$channel_idx" "$delta" 2>/dev/null || true)"
+  entry="$(resolve_vibe_program "$vibe_idx" "$delta" 2>/dev/null || true)"
+  [[ -n "$entry" ]] || {
+    log_msg warn "program switch ignored: vibe=${vibe_idx} has no program catalog"
+    return 1
+  }
+  target="${entry#*$'\t'}"
   if [[ -z "$target" ]]; then
-    log_msg warn "program switch ignored: vibe=${vibe_idx} channel=${channel_idx} has no program catalog"
+    log_msg warn "program switch ignored: vibe=${vibe_idx} has no program catalog"
     return 1
   fi
 
-  switch_with_recovery "$target" "$vibe_idx" "$channel_idx" || true
+  switch_with_recovery "$target" "$vibe_idx" 0 || true
 }
 
 read_keyboard_event() {
@@ -1402,45 +1519,23 @@ read_keyboard_event() {
 
 switch_random_channel() {
   local vibe_numbers=()
-  local channel_numbers=()
   local pick=0
   local vibe_idx=""
+  local entry=""
 
   mapfile -t vibe_numbers < <(list_active_vibe_numbers 2>/dev/null)
   (( ${#vibe_numbers[@]} > 0 )) || die "No vibes found in $CHANNELS_FILE"
   pick="$(rand_int_between 1 "${#vibe_numbers[@]}")"
   vibe_idx="${vibe_numbers[$((pick-1))]}"
-
-  mapfile -t channel_numbers < <(list_active_channel_numbers_for_vibe "$vibe_idx" 2>/dev/null)
-  (( ${#channel_numbers[@]} > 0 )) || die "No channels found for vibe ${vibe_idx} in $CHANNELS_FILE"
-  pick="$(rand_int_between 1 "${#channel_numbers[@]}")"
-  switch_and_remember_selection "$vibe_idx" "${channel_numbers[$((pick-1))]}"
-}
-
-switch_channel_relative() {
-  local delta="$1"
-  local selection=""
-  local vibe_idx=""
-  local channel_idx=""
-
-  selection="$(current_selection || true)"
-  [[ -n "$selection" ]] || return 1
-  vibe_idx="${selection%% *}"
-
-  if (( delta > 0 )); then
-    channel_idx="$(get_next_channel_index "$vibe_idx")"
-  else
-    channel_idx="$(get_prev_channel_index "$vibe_idx")"
-  fi
-
-  switch_and_remember_selection "$vibe_idx" "$channel_idx"
+  entry="$(resolve_vibe_program "$vibe_idx" 0 || true)"
+  [[ -n "$entry" ]] || die "No programs found for vibe ${vibe_idx} in $CHANNELS_FILE"
+  switch_with_recovery "${entry#*$'\t'}" "$vibe_idx" 0 || true
 }
 
 switch_vibe_relative() {
   local delta="$1"
   local vibe_idx=""
-  local selection=""
-  local channel_idx=""
+  local entry=""
 
   if (( delta > 0 )); then
     vibe_idx="$(get_next_vibe_index)"
@@ -1448,10 +1543,9 @@ switch_vibe_relative() {
     vibe_idx="$(get_prev_vibe_index)"
   fi
 
-  selection="$(current_selection "$vibe_idx" || true)"
-  [[ -n "$selection" ]] || return 1
-  channel_idx="${selection##* }"
-  switch_and_remember_selection "$vibe_idx" "$channel_idx"
+  entry="$(resolve_vibe_program "$vibe_idx" 0 || true)"
+  [[ -n "$entry" ]] || return 1
+  switch_with_recovery "${entry#*$'\t'}" "$vibe_idx" 0 || true
 }
 
 switch_from_selector_or_url() {
@@ -1528,19 +1622,18 @@ run_controller() {
     fi
   fi
 
-  echo "Controls: ${KEY_NEXT}=next-channel ${KEY_PREV}=prev-channel ${KEY_RANDOM}=random 1-9=channel ${KEY_QUIT}=quit"
+  echo "Controls: ${KEY_NEXT}=next-program ${KEY_PREV}=prev-program ${KEY_RANDOM}=random ${KEY_QUIT}=quit"
   while true; do
     event=""
 
     if is_true "$AUTO_RECOVER_SHELL"; then
       if ! socket_live; then
-        log_msg error "mpv socket unavailable; restarting shell and recovering selection"
+        log_msg error "mpv socket unavailable; restarting shell and recovering vibe"
         ensure_shell
-        selection="$(current_selection || true)"
-        if [[ -n "$selection" ]]; then
-          vibe_idx="${selection%% *}"
-          channel_idx="${selection##* }"
-          switch_and_remember_selection "$vibe_idx" "$channel_idx"
+        vibe_idx="$(current_vibe_with_programs || true)"
+        if [[ -n "$vibe_idx" ]]; then
+          entry="$(resolve_vibe_program "$vibe_idx" 0 || true)"
+          [[ -n "$entry" ]] && switch_with_recovery "${entry#*$'\t'}" "$vibe_idx" 0 || true
         fi
       fi
     fi
@@ -1560,7 +1653,7 @@ run_controller() {
 
     eof_state="$(mpv_get_property "eof-reached" || true)"
     if is_true "$AUTO_ADVANCE_ON_END" && [[ "$eof_state" == "true" ]] && [[ "$last_eof_state" != "true" ]]; then
-      log_msg info "program ended; auto-advancing within current channel"
+      log_msg info "program ended; auto-advancing within current vibe"
       switch_program_relative 1
     fi
     last_eof_state="$eof_state"
@@ -1572,9 +1665,9 @@ run_controller() {
     if [[ "$event" == "$KEY_QUIT" ]] || [[ "$cmd" == "quit" ]]; then
       break
     elif [[ "$event" == "$KEY_NEXT" ]] || [[ "$cmd" == "next" ]]; then
-      switch_channel_relative 1
+      switch_program_relative 1
     elif [[ "$event" == "$KEY_PREV" ]] || [[ "$cmd" == "prev" ]]; then
-      switch_channel_relative -1
+      switch_program_relative -1
     elif [[ "$event" == "$KEY_RANDOM" ]] || [[ "$cmd" == "random" ]]; then
       switch_random_channel
     elif [[ "$cmd" == "vibe-next" ]]; then
@@ -1592,9 +1685,11 @@ run_controller() {
     elif [[ "$cmd" == "program-prev" ]]; then
       switch_program_relative -1
     elif [[ "$event" =~ ^[1-9]$ ]]; then
-      selection="$(current_selection || true)"
-      [[ -n "$selection" ]] || continue
-      switch_and_remember_selection "${selection%% *}" "$event"
+      if vibe_idx="$(current_vibe_with_programs || true)"; then
+        if idx="$(resolve_channel_selector_to_index "$vibe_idx" "$event" 2>/dev/null)"; then
+          switch_and_remember_selection "$vibe_idx" "$idx"
+        fi
+      fi
     elif [[ "$cmd" == "channel" ]] && [[ -n "$arg" ]]; then
       switch_from_selector_or_url "$arg"
     elif [[ "$cmd" == "url" ]] && [[ -n "$arg" ]]; then
@@ -1738,37 +1833,37 @@ case "$COMMAND" in
           die "Unknown channel selector in vibe ${RESOLVED_VIBE_INDEX}: $CHANNEL"
         fi
       else
-        selection="$(current_selection "${RESOLVED_VIBE_INDEX:-}" || true)"
-        [[ -n "$selection" ]] || die "No current selection available"
-        RESOLVED_VIBE_INDEX="${selection%% *}"
-        RESOLVED_CHANNEL_INDEX="${selection##* }"
+        RESOLVED_VIBE_INDEX="${RESOLVED_VIBE_INDEX:-$(current_vibe_with_programs || true)}"
+        [[ -n "$RESOLVED_VIBE_INDEX" ]] || die "No current vibe available"
       fi
 
-      [[ -n "$RESOLVED_CHANNEL_INDEX" ]] || die "No current channel selected for program switching"
-      channel_has_program_catalog "$RESOLVED_VIBE_INDEX" "$RESOLVED_CHANNEL_INDEX" || die "Vibe ${RESOLVED_VIBE_INDEX} channel ${RESOLVED_CHANNEL_INDEX} has no playable program catalog"
+      [[ -n "$RESOLVED_VIBE_INDEX" ]] || die "No current vibe selected for program switching"
+      vibe_has_program_catalog "$RESOLVED_VIBE_INDEX" || die "Vibe ${RESOLVED_VIBE_INDEX} has no playable program catalog"
 
       if [[ "$PROGRAM_NEXT" -eq 1 ]]; then
-        RESOLVED_TARGET="$(channel_url_by_index "$RESOLVED_VIBE_INDEX" "$RESOLVED_CHANNEL_INDEX" 1)"
+        selection="$(resolve_vibe_program "$RESOLVED_VIBE_INDEX" 1 || true)"
       else
-        RESOLVED_TARGET="$(channel_url_by_index "$RESOLVED_VIBE_INDEX" "$RESOLVED_CHANNEL_INDEX" -1)"
+        selection="$(resolve_vibe_program "$RESOLVED_VIBE_INDEX" -1 || true)"
       fi
-      [[ -n "$RESOLVED_TARGET" ]] || die "Vibe ${RESOLVED_VIBE_INDEX} channel ${RESOLVED_CHANNEL_INDEX} has no playable programs"
+      [[ -n "$selection" ]] || die "Vibe ${RESOLVED_VIBE_INDEX} has no playable programs"
+      RESOLVED_CHANNEL_INDEX="${selection%%$'\t'*}"
+      RESOLVED_TARGET="${selection#*$'\t'}"
     elif [[ "$RANDOM_SWITCH" -eq 1 ]]; then
       mapfile -t RANDOM_VIBE_NUMBERS < <(list_active_vibe_numbers 2>/dev/null)
       (( ${#RANDOM_VIBE_NUMBERS[@]} > 0 )) || die "No vibes found in $CHANNELS_FILE"
       RANDOM_VIBE_PICK="$(rand_int_between 1 "${#RANDOM_VIBE_NUMBERS[@]}")"
       RESOLVED_VIBE_INDEX="${RANDOM_VIBE_NUMBERS[$((RANDOM_VIBE_PICK-1))]}"
-      mapfile -t RANDOM_CHANNEL_NUMBERS < <(list_active_channel_numbers_for_vibe "$RESOLVED_VIBE_INDEX" 2>/dev/null)
-      (( ${#RANDOM_CHANNEL_NUMBERS[@]} > 0 )) || die "No channels found for vibe ${RESOLVED_VIBE_INDEX} in $CHANNELS_FILE"
-      RANDOM_CHANNEL_PICK="$(rand_int_between 1 "${#RANDOM_CHANNEL_NUMBERS[@]}")"
-      RESOLVED_CHANNEL_INDEX="${RANDOM_CHANNEL_NUMBERS[$((RANDOM_CHANNEL_PICK-1))]}"
-      RESOLVED_TARGET="$(channel_url_by_index "$RESOLVED_VIBE_INDEX" "$RESOLVED_CHANNEL_INDEX")"
+      selection="$(resolve_vibe_program "$RESOLVED_VIBE_INDEX" 0 || true)"
+      [[ -n "$selection" ]] || die "No programs found for vibe ${RESOLVED_VIBE_INDEX} in $CHANNELS_FILE"
+      RESOLVED_CHANNEL_INDEX="${selection%%$'\t'*}"
+      RESOLVED_TARGET="${selection#*$'\t'}"
     elif [[ -z "$VIBE" && -z "$CHANNEL" && -z "$URL" ]]; then
-      selection="$(current_selection || true)"
-      [[ -n "$selection" ]] || die "No current selection available"
-      RESOLVED_VIBE_INDEX="${selection%% *}"
-      RESOLVED_CHANNEL_INDEX="$(get_next_channel_index "$RESOLVED_VIBE_INDEX")"
-      RESOLVED_TARGET="$(channel_url_by_index "$RESOLVED_VIBE_INDEX" "$RESOLVED_CHANNEL_INDEX")"
+      RESOLVED_VIBE_INDEX="$(current_vibe_with_programs || true)"
+      [[ -n "$RESOLVED_VIBE_INDEX" ]] || die "No current vibe available"
+      selection="$(resolve_vibe_program "$RESOLVED_VIBE_INDEX" 1 || true)"
+      [[ -n "$selection" ]] || die "No programs found for vibe ${RESOLVED_VIBE_INDEX} in $CHANNELS_FILE"
+      RESOLVED_CHANNEL_INDEX="${selection%%$'\t'*}"
+      RESOLVED_TARGET="${selection#*$'\t'}"
     else
       resolve_target "$VIBE" "$CHANNEL" "$URL" || true
       if [[ -z "$RESOLVED_TARGET" ]]; then

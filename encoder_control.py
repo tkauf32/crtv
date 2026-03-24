@@ -11,7 +11,7 @@ from pathlib import Path
 from gpiozero import Button
 
 VIBE_ENCODER_PINS = {"a": 17, "b": 27, "sw": 22}
-CHANNEL_ENCODER_PINS = {"a": 23, "b": 24, "sw": 25}
+PROGRAM_ENCODER_PINS = {"a": 23, "b": 24, "sw": 25}
 
 CRT_PLAYER = "/home/tommy/crtv/crt_player.sh"
 CHANNELS_FILE = "/home/tommy/crtv/channels.json"
@@ -25,15 +25,12 @@ DETENT_COOLDOWN_SECONDS = 0.40
 
 state_lock = threading.Lock()
 active_process = None
-active_selection = None
-desired_selection = None
-last_started_selection = None
+active_vibe = None
+desired_vibe = None
+last_started_vibe = None
 
 active_vibe_numbers = []
-active_channels_by_vibe = {}
 current_vibe = 0
-current_channel = 0
-selected_channel_by_vibe = {}
 start_time = time.time()
 
 TRANSITIONS = {
@@ -57,45 +54,25 @@ def write_switch_request_token():
     Path(SWITCH_REQUEST_FILE).write_text(token, encoding="utf-8")
 
 
-def load_active_layout():
-    global active_vibe_numbers, active_channels_by_vibe
+def load_active_vibes():
+    global active_vibe_numbers
 
     with open(CHANNELS_FILE, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
 
-    vibes = payload.get("vibes", [])
-    vibe_numbers = []
-    channels_by_vibe = {}
-
-    for vibe_index, vibe in enumerate(vibes, start=1):
+    numbers = []
+    for index, vibe in enumerate(payload.get("vibes", []), start=1):
         if not isinstance(vibe, dict) or vibe.get("disabled", False):
             continue
+        vibe_number = vibe.get("number", index)
+        if isinstance(vibe_number, int):
+            numbers.append(vibe_number)
 
-        vibe_number = vibe.get("number", vibe_index)
-        if not isinstance(vibe_number, int):
-            continue
-
-        channel_numbers = []
-        for channel_index, channel in enumerate(vibe.get("channels", []), start=1):
-            if not isinstance(channel, dict) or channel.get("disabled", False):
-                continue
-            channel_number = channel.get("number", channel_index)
-            if isinstance(channel_number, int):
-                channel_numbers.append(channel_number)
-
-        channel_numbers = sorted(set(channel_numbers))
-        if not channel_numbers:
-            continue
-
-        vibe_numbers.append(vibe_number)
-        channels_by_vibe[vibe_number] = channel_numbers
-
-    vibe_numbers = sorted(set(vibe_numbers))
-    if not vibe_numbers:
+    numbers = sorted(set(numbers))
+    if not numbers:
         raise RuntimeError("No active vibes found in channels.json")
 
-    active_vibe_numbers = vibe_numbers
-    active_channels_by_vibe = channels_by_vibe
+    active_vibe_numbers = numbers
 
 
 def next_configured_vibe(vibe):
@@ -112,165 +89,112 @@ def prev_configured_vibe(vibe):
     return active_vibe_numbers[-1]
 
 
-def next_configured_channel(vibe, channel):
-    channels = active_channels_by_vibe[vibe]
-    for candidate in channels:
-        if candidate > channel:
-            return candidate
-    return channels[0]
+def build_vibe_switch_args(vibe):
+    return [CRT_PLAYER, "switch", "--vibe", str(vibe), "--no-recover"]
 
 
-def prev_configured_channel(vibe, channel):
-    channels = active_channels_by_vibe[vibe]
-    for candidate in reversed(channels):
-        if candidate < channel:
-            return candidate
-    return channels[-1]
+def build_program_switch_args(vibe, direction):
+    flag = "--program-next" if direction > 0 else "--program-prev"
+    return [CRT_PLAYER, "switch", "--vibe", str(vibe), flag, "--no-recover"]
 
 
-def default_channel_for_vibe(vibe):
-    remembered = selected_channel_by_vibe.get(vibe)
-    channels = active_channels_by_vibe[vibe]
-    if remembered in channels:
-        return remembered
-    return channels[0]
-
-
-def build_switch_args(vibe, channel):
-    return [
-        CRT_PLAYER,
-        "switch",
-        "--vibe",
-        str(vibe),
-        "--channel",
-        str(channel),
-        "--no-recover",
-    ]
-
-
-def request_selection(vibe, channel=None):
-    global current_vibe, current_channel, desired_selection
-
-    if vibe not in active_channels_by_vibe:
-        return
-
-    if channel is None:
-        channel = default_channel_for_vibe(vibe)
-    elif channel not in active_channels_by_vibe[vibe]:
-        channel = default_channel_for_vibe(vibe)
+def request_vibe(vibe):
+    global current_vibe, desired_vibe
 
     with state_lock:
         current_vibe = vibe
-        current_channel = channel
-        selected_channel_by_vibe[vibe] = channel
-        desired_selection = (vibe, channel)
+        desired_vibe = vibe
 
     write_switch_request_token()
-    print(f"{ts()}  TARGET VIBE {vibe} CHANNEL {channel}")
+    print(f"{ts()}  TARGET VIBE {vibe}")
 
 
 def next_vibe():
     if current_vibe not in active_vibe_numbers:
-        request_selection(active_vibe_numbers[0])
+        request_vibe(active_vibe_numbers[0])
         return
-    request_selection(next_configured_vibe(current_vibe))
+    request_vibe(next_configured_vibe(current_vibe))
 
 
 def prev_vibe():
     if current_vibe not in active_vibe_numbers:
-        request_selection(active_vibe_numbers[-1])
+        request_vibe(active_vibe_numbers[-1])
         return
-    request_selection(prev_configured_vibe(current_vibe))
+    request_vibe(prev_configured_vibe(current_vibe))
 
 
-def next_channel():
-    if current_vibe not in active_channels_by_vibe:
-        request_selection(active_vibe_numbers[0])
-        return
-
-    channel = current_channel
-    if channel not in active_channels_by_vibe[current_vibe]:
-        channel = default_channel_for_vibe(current_vibe)
-
-    request_selection(current_vibe, next_configured_channel(current_vibe, channel))
-
-
-def prev_channel():
-    if current_vibe not in active_channels_by_vibe:
-        request_selection(active_vibe_numbers[0])
+def request_program(direction):
+    vibe = current_vibe
+    if vibe not in active_vibe_numbers:
+        print(f"{ts()}  PROGRAM {'NEXT' if direction > 0 else 'PREV'} IGNORED no active vibe")
         return
 
-    channel = current_channel
-    if channel not in active_channels_by_vibe[current_vibe]:
-        channel = default_channel_for_vibe(current_vibe)
-
-    request_selection(current_vibe, prev_configured_channel(current_vibe, channel))
+    args = build_program_switch_args(vibe, direction)
+    write_switch_request_token()
+    try:
+        subprocess.Popen(args)
+        print(f"{ts()}  RUN {' '.join(args)}")
+    except Exception as exc:
+        print(f"{ts()}  Command error: {exc}")
 
 
 def switch_worker():
-    global active_process, active_selection, last_started_selection
+    global active_process, active_vibe, last_started_vibe
 
     while True:
-        completed_selection = None
+        completed_vibe = None
         completed_rc = None
         completed_desired = None
-        start_selection = None
+        start_vibe = None
         start_args = None
 
         with state_lock:
             proc = active_process
-            desired = desired_selection
-            active = active_selection
+            desired = desired_vibe
+            active = active_vibe
 
         if proc is not None:
             rc = proc.poll()
             if rc is not None:
-                completed_selection = active
+                completed_vibe = active
                 completed_rc = rc
                 completed_desired = desired
                 with state_lock:
                     active_process = None
-                    active_selection = None
+                    active_vibe = None
 
         with state_lock:
             proc = active_process
-            desired = desired_selection
+            desired = desired_vibe
 
-            if proc is None and desired is not None and desired != last_started_selection:
-                start_selection = desired
-                start_args = build_switch_args(*desired)
+            if proc is None and desired in active_vibe_numbers and desired != last_started_vibe:
+                start_vibe = desired
+                start_args = build_vibe_switch_args(desired)
                 try:
                     active_process = subprocess.Popen(start_args)
-                    active_selection = desired
-                    last_started_selection = desired
+                    active_vibe = desired
+                    last_started_vibe = desired
                 except Exception as exc:
                     print(f"{ts()}  Command error: {exc}")
                     active_process = None
-                    active_selection = None
+                    active_vibe = None
 
-        if start_selection is not None and start_args is not None:
+        if start_vibe is not None and start_args is not None:
             print(f"{ts()}  RUN {' '.join(start_args)}")
 
-        if completed_selection is not None:
-            vibe, channel = completed_selection
+        if completed_vibe is not None:
             if completed_rc == 0:
-                if completed_desired == completed_selection:
-                    print(f"{ts()}  SWITCHED TO VIBE {vibe} CHANNEL {channel}")
+                if completed_desired == completed_vibe:
+                    print(f"{ts()}  SWITCHED TO VIBE {completed_vibe}")
                 else:
-                    print(
-                        f"{ts()}  STALE SWITCH COMPLETED "
-                        f"vibe={vibe} channel={channel} desired={completed_desired}"
-                    )
+                    print(f"{ts()}  STALE SWITCH COMPLETED vibe={completed_vibe} desired={completed_desired}")
             elif completed_rc == 2:
-                print(f"{ts()}  SUPERSEDED SWITCH TO VIBE {vibe} CHANNEL {channel}")
+                print(f"{ts()}  SUPERSEDED SWITCH TO VIBE {completed_vibe}")
             else:
-                if completed_desired == completed_selection:
-                    print(f"{ts()}  SWITCH FAILED TO VIBE {vibe} CHANNEL {channel} rc={completed_rc}")
+                if completed_desired == completed_vibe:
+                    print(f"{ts()}  SWITCH FAILED TO VIBE {completed_vibe} rc={completed_rc}")
                 else:
-                    print(
-                        f"{ts()}  STALE SWITCH FAILED vibe={vibe} "
-                        f"channel={channel} rc={completed_rc} desired={completed_desired}"
-                    )
+                    print(f"{ts()}  STALE SWITCH FAILED vibe={completed_vibe} rc={completed_rc} desired={completed_desired}")
 
         time.sleep(WORKER_POLL_SECONDS)
 
@@ -312,17 +236,13 @@ class RotaryEncoder:
 
     def log(self, msg):
         a, b = self.ab_bits()
-        print(
-            f"{ts()}  {self.name:<8} {msg:<28} "
-            f"A={a} B={b} vibe={current_vibe} ch={current_channel} acc={self.accumulator}"
-        )
+        print(f"{ts()}  {self.name:<8} {msg:<28} A={a} B={b} vibe={current_vibe} acc={self.accumulator}")
 
     def handle_button_press(self):
         self.log("BUTTON PRESS IGNORED")
 
     def handle_ab_change(self, source):
         current_ab = self.ab_value()
-
         step = TRANSITIONS.get((self.last_ab, current_ab), 0)
         if step == 0:
             self.last_ab = current_ab
@@ -351,7 +271,7 @@ class RotaryEncoder:
             self.on_counterclockwise()
 
 
-load_active_layout()
+load_active_vibes()
 threading.Thread(target=switch_worker, daemon=True).start()
 
 vibe_encoder = RotaryEncoder(
@@ -363,13 +283,13 @@ vibe_encoder = RotaryEncoder(
     on_counterclockwise=prev_vibe,
 )
 
-channel_encoder = RotaryEncoder(
-    name="channel",
-    pin_a_num=CHANNEL_ENCODER_PINS["a"],
-    pin_b_num=CHANNEL_ENCODER_PINS["b"],
-    pin_sw_num=CHANNEL_ENCODER_PINS["sw"],
-    on_clockwise=next_channel,
-    on_counterclockwise=prev_channel,
+program_encoder = RotaryEncoder(
+    name="program",
+    pin_a_num=PROGRAM_ENCODER_PINS["a"],
+    pin_b_num=PROGRAM_ENCODER_PINS["b"],
+    pin_sw_num=PROGRAM_ENCODER_PINS["sw"],
+    on_clockwise=lambda: request_program(1),
+    on_counterclockwise=lambda: request_program(-1),
 )
 
 print("Encoder control started")
@@ -378,17 +298,16 @@ print(
     f"A={VIBE_ENCODER_PINS['a']} B={VIBE_ENCODER_PINS['b']} SW={VIBE_ENCODER_PINS['sw']}"
 )
 print(
-    "Channel encoder pins: "
-    f"A={CHANNEL_ENCODER_PINS['a']} B={CHANNEL_ENCODER_PINS['b']} SW={CHANNEL_ENCODER_PINS['sw']}"
+    "Program encoder pins: "
+    f"A={PROGRAM_ENCODER_PINS['a']} B={PROGRAM_ENCODER_PINS['b']} SW={PROGRAM_ENCODER_PINS['sw']}"
 )
 print(f"Player path: {CRT_PLAYER}")
 print(f"Vibes: {active_vibe_numbers}")
-print(f"Channels by vibe: {active_channels_by_vibe}")
 print(f"Detent transitions: {DETENT_TRANSITIONS}")
 
 vibe_encoder.log("INITIAL")
-channel_encoder.log("INITIAL")
-request_selection(active_vibe_numbers[0])
+program_encoder.log("INITIAL")
+request_vibe(active_vibe_numbers[0])
 
 try:
     while True:

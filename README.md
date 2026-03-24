@@ -5,10 +5,10 @@ Raspberry Pi CRT video player built around two rotary encoders.
 The control model is now:
 
 - Top encoder: `vibes`
-- Second encoder: `channels` within the selected vibe
-- Playback source: `programs` discovered from the selected channel's `path` or `paths`
+- Second encoder: `programs` across the selected vibe
+- Organization only: `channels` inside each vibe group related media directories
 
-Programs are individual files inside the configured directories. When a program ends, the player can auto-advance within the current channel instead of jumping to a different vibe or channel.
+Programs are individual files discovered by flattening all channel `path` and `paths` entries inside the selected vibe. When a program ends, the player can auto-advance within the current vibe.
 
 ## Entrypoint
 Use `./crt_player.sh` as the master entrypoint.
@@ -94,6 +94,10 @@ Important env vars:
 - `STATIC_FILE`
 - `LOG_FILE`
 - `MPV_LOG_FILE`
+
+## Hardware
+- Encoder 1 on `GPIO17/27/22` changes vibes.
+- Encoder 2 on `GPIO23/24/25` changes programs inside the current vibe.
 
 ## Current Sample Vibes
 The sample config currently starts with:
