@@ -87,6 +87,10 @@ Important env vars:
 - `CHANNEL_INDEX_DIR`
 - `PROGRAM_INDEX_DIR`
 - `PROGRAM_ORDER_RANDOM`
+- `DOWNSAMPLE_HEIGHT`
+- `ENABLE_CROP_FILTER`
+- `CROP_FILTER`
+- `ENABLE_RANDOM_START`
 - `DEFAULT_START_VIBE`
 - `DEFAULT_START_CHANNEL`
 - `AUTO_ADVANCE_ON_END`
@@ -98,6 +102,11 @@ Important env vars:
 ## Hardware
 - Encoder 1 on `GPIO17/27/22` changes vibes.
 - Encoder 2 on `GPIO23/24/25` changes programs inside the current vibe.
+
+## Defaults
+- Crop/squeeze is off by default.
+- Playback downsampling stays on by default with `DOWNSAMPLE_HEIGHT=240`.
+- Random clip starts are on by default.
 
 ## Current Sample Vibes
 The sample config currently starts with:

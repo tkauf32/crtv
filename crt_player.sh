@@ -16,10 +16,13 @@ set -euo pipefail
 #                              Default: 1.8
 #   CHANNELS_FILE              Vibe/channel JSON path.
 #                              Default: <script_dir>/channels.json
-#   ENABLE_RANDOM_START        Random start policy: auto|1|0 (default: auto)
-#                              auto => on for http(s) URLs, off for local paths
+#   ENABLE_RANDOM_START        Random start policy: auto|1|0 (default: 1)
+#                              auto => on for all playable sources
 #   RANDOM_START_MIN_PCT       Default: 20
 #   RANDOM_START_MAX_PCT       Default: 80
+#   DOWNSAMPLE_HEIGHT          Playback downsample target height. Default: 240
+#   ENABLE_CROP_FILTER         Apply optional crop filter: 1|0 (default: 0)
+#   CROP_FILTER                Crop filter used when ENABLE_CROP_FILTER=1
 #   VIBE_INDEX_FILE            Tracks current tuned vibe number
 #   CHANNEL_INDEX_DIR          Tracks current tuned channel per vibe
 #   PROGRAM_ORDER_RANDOM      Randomize directory-backed program order: 1|0
@@ -76,7 +79,10 @@ fi
 : "${MPV_VO:=gpu}"
 : "${MPV_GPU_CONTEXT:=x11egl}"
 : "${MPV_HWDEC:=auto}"
-: "${VF_CHAIN:=crop=ih*4/3:ih}"
+: "${VF_CHAIN:=}"
+: "${DOWNSAMPLE_HEIGHT:=240}"
+: "${ENABLE_CROP_FILTER:=0}"
+: "${CROP_FILTER:=crop=ih*4/3:ih}"
 : "${DISPLAY:=:0}"
 : "${XAUTHORITY:=${HOME}/.Xauthority}"
 : "${TV_SOCK:=/tmp/crt_player.sock}"
@@ -87,7 +93,7 @@ fi
 : "${CHANNELS_FILE:=${REPO_ROOT}/channels.json}"
 : "${RESOLUTION:=240}"
 : "${YTDL_MAX_FPS:=30}"
-: "${ENABLE_RANDOM_START:=auto}"
+: "${ENABLE_RANDOM_START:=1}"
 : "${RANDOM_START_MIN_PCT:=20}"
 : "${RANDOM_START_MAX_PCT:=80}"
 : "${VIBE_INDEX_FILE:=/tmp/crt_player_vibe_index}"
@@ -121,7 +127,7 @@ fi
 : "${KEY_RANDOM:=r}"
 : "${KEY_QUIT:=q}"
 : "${INPUT_EVENT_CMD:=}"
-: "${STATIC_VF_CHAIN:=${VF_CHAIN}}"
+: "${STATIC_VF_CHAIN:=}"
 : "${AMIXER_BIN:=/usr/bin/amixer}"
 : "${AMIXER_CONTROL:=Master}"
 : "${VOLUME_STEP_PCT:=10}"
@@ -152,7 +158,8 @@ Env:
   STATIC_REMOTE_SECONDS, STATIC_LOCAL_SECONDS, STATIC_VF_CHAIN,
   AUTO_ADVANCE_ON_END, AUTO_ADVANCE_POLL_SECONDS,
   RECOVER_TO_NEXT_ON_FAILURE, MAX_RECOVERY_CHANNEL_TRIES, AUTO_RECOVER_SHELL,
-  ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, VIBE_INDEX_FILE, CHANNEL_INDEX_DIR, PROGRAM_INDEX_DIR, PROGRAM_ORDER_RANDOM,
+  ENABLE_RANDOM_START, RANDOM_START_MIN_PCT, RANDOM_START_MAX_PCT, DOWNSAMPLE_HEIGHT, ENABLE_CROP_FILTER, CROP_FILTER,
+  VIBE_INDEX_FILE, CHANNEL_INDEX_DIR, PROGRAM_INDEX_DIR, PROGRAM_ORDER_RANDOM,
   RESOLUTION, YTDL_MAX_FPS, PROFILE, MPV_VO, MPV_GPU_CONTEXT, MPV_HWDEC, VF_CHAIN,
   DISPLAY, XAUTHORITY, LOG_LEVEL, LOG_FILE, LOG_FILE_LEVEL, LOG_TO_STDERR, MPV_LOG_FILE, MPV_LOG_LEVEL,
   MPV_LOG_EXCERPT_LINES, SWITCH_LOCK_FILE, SWITCH_LOCK_WAIT_SECONDS, SWITCH_REQUEST_FILE,
@@ -266,13 +273,55 @@ build_ytdl_format() {
     "$RESOLUTION" "$fps_filter" "$RESOLUTION" "$fps_filter"
 }
 
+build_effective_vf_chain() {
+  local filters=()
+
+  if [[ -n "${VF_CHAIN}" ]]; then
+    printf '%s\n' "$VF_CHAIN"
+    return 0
+  fi
+
+  if is_int "$DOWNSAMPLE_HEIGHT" && (( DOWNSAMPLE_HEIGHT > 0 )); then
+    filters+=("scale=-2:${DOWNSAMPLE_HEIGHT}:flags=bilinear")
+  fi
+
+  if is_true "$ENABLE_CROP_FILTER"; then
+    filters+=("$CROP_FILTER")
+  fi
+
+  if (( ${#filters[@]} == 0 )); then
+    return 0
+  fi
+
+  local joined="${filters[0]}"
+  local filter=""
+  for filter in "${filters[@]:1}"; do
+    joined="${joined},${filter}"
+  done
+  printf '%s\n' "$joined"
+}
+
+playback_vf_chain() {
+  printf '%s\n' "$(build_effective_vf_chain)"
+}
+
+static_vf_chain() {
+  if [[ -n "${STATIC_VF_CHAIN}" ]]; then
+    printf '%s\n' "$STATIC_VF_CHAIN"
+  else
+    printf '%s\n' "$(build_effective_vf_chain)"
+  fi
+}
+
 build_mpv_args() {
+  local effective_vf=""
+
+  effective_vf="$(playback_vf_chain)"
   MPV_ARGS=(
     "--vo=${MPV_VO}"
     "--gpu-context=${MPV_GPU_CONTEXT}"
     "--profile=fast"
     "--hwdec=${MPV_HWDEC}"
-    "--vf=${VF_CHAIN}"
     "--vd-lavc-threads=2"
     "--vd-lavc-skiploopfilter=all"
     "--vd-lavc-fast"
@@ -289,6 +338,10 @@ build_mpv_args() {
     "--dscale=bilinear"
     "--idle=yes"
   )
+
+  if [[ -n "$effective_vf" ]]; then
+    MPV_ARGS+=("--vf=${effective_vf}")
+  fi
 
   upsert_mpv_arg "input-ipc-server" "$TV_SOCK"
   upsert_mpv_arg "ytdl-format" "$(build_ytdl_format)"
@@ -478,10 +531,7 @@ should_random_start() {
       return 1
       ;;
     auto|"")
-      if is_remote_source "$src"; then
-        return 0
-      fi
-      return 1
+      return 0
       ;;
     *)
       die "ENABLE_RANDOM_START must be one of: auto, 1, 0"
@@ -555,7 +605,13 @@ static_duration_for_target() {
 }
 
 play_static_now() {
-  mpv_send_json "$(jq -nc --arg vf "$STATIC_VF_CHAIN" '{"command":["vf", "set", $vf]}')" || true
+  local vf=""
+  vf="$(static_vf_chain)"
+  if [[ -n "$vf" ]]; then
+    mpv_send_json "$(jq -nc --arg vf "$vf" '{"command":["vf", "set", $vf]}')" || true
+  else
+    mpv_send_json "$(jq -nc '{"command":["vf", "set", ""]}')" || true
+  fi
   mpv_send_json "$(jq -nc --arg f "$STATIC_FILE" '{"command":["loadfile", $f, "replace"]}')" || true
   mpv_send_json "$(jq -nc '{"command":["set_property", "loop-file", "inf"]}')" || true
 }
@@ -615,7 +671,13 @@ switch_channel_attempt() {
   mpv_send_json "$(jq -nc '{"command":["set_property", "loop-file", "no"]}')" || true
 
   sleep_interruptible 0.20 "$request_token" || return 2
-  mpv_send_json "$(jq -nc --arg vf "$VF_CHAIN" '{"command":["vf", "set", $vf]}')" || true
+  local playback_vf=""
+  playback_vf="$(playback_vf_chain)"
+  if [[ -n "$playback_vf" ]]; then
+    mpv_send_json "$(jq -nc --arg vf "$playback_vf" '{"command":["vf", "set", $vf]}')" || true
+  else
+    mpv_send_json "$(jq -nc '{"command":["vf", "set", ""]}')" || true
+  fi
 
   if wait_for_target_ready "$request_token"; then
     wait_ok=1
