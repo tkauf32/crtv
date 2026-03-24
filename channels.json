@@ -1,60 +1,168 @@
 {
-  "channels": [
+  "vibes": [
     {
       "number": 1,
-      "name": "medieval-ambiance-lofi",
-      "programs": [
-        "/home/tommy/crtv/local-media/Medieval-Lofi_The-Gray-Wizard-Journey.mp4"
+      "name": "focus",
+      "channels": [
+        {
+          "number": 1,
+          "name": "study-lofi",
+          "paths": [
+            "/home/tommy/crtv/local-media/focus/study-lofi"
+          ]
+        },
+        {
+          "number": 2,
+          "name": "deep-work",
+          "paths": [
+            "/home/tommy/crtv/local-media/focus/deep-work"
+          ]
+        }
       ]
     },
     {
       "number": 2,
-      "name": "study-focus-lofi",
-      "programs": [
-        "/home/tommy/crtv/local-media/outdoor-focus-morning-nature-chill.mp4"
+      "name": "relax",
+      "channels": [
+        {
+          "number": 1,
+          "name": "fireplace",
+          "paths": [
+            "/mnt/usb/relax/fireplace"
+          ]
+        },
+        {
+          "number": 2,
+          "name": "cozy-ambience",
+          "paths": [
+            "/mnt/usb/relax/cozy-ambience"
+          ]
+        }
       ]
     },
     {
       "number": 3,
-      "name": "natural-environment",
-      "programs": [
-        "/home/tommy/crtv/local-media/natural-environment-river-water-asmr.mp4"
+      "name": "meditate",
+      "channels": [
+        {
+          "number": 1,
+          "name": "calming-nature",
+          "paths": [
+            "/mnt/usb/meditate/calming-nature"
+          ]
+        }
       ]
     },
     {
       "number": 4,
-      "name": "fireplace",
-      "url": "/mnt/usb/media/fireplace-burning.webm"
+      "name": "television",
+      "channels": [
+        {
+          "number": 1,
+          "name": "sitcoms",
+          "paths": [
+            "/mnt/usb/television/sitcoms"
+          ]
+        },
+        {
+          "number": 2,
+          "name": "cartoons",
+          "paths": [
+            "/mnt/usb/television/cartoons"
+          ]
+        }
+      ]
     },
     {
       "number": 5,
-      "name": "ghibli-forest",
-      "url": "/mnt/usb/media/ghibli-inspired-forest.webm"
+      "name": "seasonal",
+      "channels": [
+        {
+          "number": 1,
+          "name": "current-season",
+          "paths": [
+            "/mnt/usb/seasonal/current-season"
+          ]
+        }
+      ]
     },
     {
       "number": 6,
-      "name": "forest-rain",
-      "url": "/mnt/usb/media/rain-forest-path.webm"
+      "name": "ambience",
+      "channels": [
+        {
+          "number": 1,
+          "name": "medieval-ambiance",
+          "paths": [
+            "/home/tommy/crtv/local-media/ambience/medieval-ambiance"
+          ]
+        },
+        {
+          "number": 2,
+          "name": "fantasy-rooms",
+          "paths": [
+            "/mnt/usb/ambience/fantasy-rooms"
+          ]
+        }
+      ]
     },
     {
       "number": 7,
-      "name": "medieval",
-      "programs": [
-        "/home/tommy/crtv/local-media/medieval-Lofi-focus_aragorn-before-the-crown.mp4"
+      "name": "nature",
+      "channels": [
+        {
+          "number": 1,
+          "name": "rivers-forest",
+          "paths": [
+            "/mnt/usb/nature/rivers-forest"
+          ]
+        }
       ]
     },
     {
       "number": 8,
-      "name": "music-media-streamed",
-      "programs": [
-        "https://www.youtube.com/watch?v=TYV3VlhWPAw"
+      "name": "music",
+      "channels": [
+        {
+          "number": 1,
+          "name": "local-mixes",
+          "paths": [
+            "/home/tommy/crtv/local-media/music/local-mixes"
+          ]
+        }
       ]
     },
     {
       "number": 9,
-      "name": "music-media-local",
-      "programs": [
-        "/home/tommy/crtv/local-media/KOLD_something-just-like-this.mp4"
+      "name": "fantasy",
+      "channels": [
+        {
+          "number": 1,
+          "name": "tavern",
+          "paths": [
+            "/mnt/usb/fantasy/tavern"
+          ]
+        },
+        {
+          "number": 2,
+          "name": "shire",
+          "paths": [
+            "/mnt/usb/fantasy/shire"
+          ]
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "name": "mixed",
+      "channels": [
+        {
+          "number": 1,
+          "name": "curated-rotation",
+          "paths": [
+            "/mnt/usb/mixed/curated-rotation"
+          ]
+        }
       ]
     }
   ]
