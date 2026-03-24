@@ -28,14 +28,14 @@
           "number": 1,
           "name": "fireplace",
           "paths": [
-            "/mnt/usb/relax/fireplace"
+            "/mnt/usb/media/relax/fireplace"
           ]
         },
         {
           "number": 2,
           "name": "cozy-ambience",
           "paths": [
-            "/mnt/usb/relax/cozy-ambience"
+            "/mnt/usb/media/relax/cozy-ambience"
           ]
         }
       ]
@@ -48,7 +48,8 @@
           "number": 1,
           "name": "calming-nature",
           "paths": [
-            "/mnt/usb/meditate/calming-nature"
+            "/home/tommy/crtv/local-media/meditate/calming-nature",
+            "/mnt/usb/media/meditate/calming-nature"
           ]
         }
       ]
@@ -59,16 +60,18 @@
       "channels": [
         {
           "number": 1,
-          "name": "sitcoms",
+          "name": "background-company",
           "paths": [
-            "/mnt/usb/television/sitcoms"
+            "/home/tommy/crtv/local-media/television/background-company",
+            "/mnt/usb/media/television/background-company"
           ]
         },
         {
           "number": 2,
-          "name": "cartoons",
+          "name": "animation",
           "paths": [
-            "/mnt/usb/television/cartoons"
+            "/home/tommy/crtv/local-media/television/animation",
+            "/mnt/usb/media/television/animation"
           ]
         }
       ]
@@ -81,7 +84,7 @@
           "number": 1,
           "name": "current-season",
           "paths": [
-            "/mnt/usb/seasonal/current-season"
+            "/mnt/usb/media/seasonal/current-season"
           ]
         }
       ]
@@ -101,7 +104,7 @@
           "number": 2,
           "name": "fantasy-rooms",
           "paths": [
-            "/mnt/usb/ambience/fantasy-rooms"
+            "/mnt/usb/media/ambience/fantasy-rooms"
           ]
         }
       ]
@@ -114,7 +117,7 @@
           "number": 1,
           "name": "rivers-forest",
           "paths": [
-            "/mnt/usb/nature/rivers-forest"
+            "/mnt/usb/media/nature/rivers-forest"
           ]
         }
       ]
@@ -140,14 +143,14 @@
           "number": 1,
           "name": "tavern",
           "paths": [
-            "/mnt/usb/fantasy/tavern"
+            "/mnt/usb/media/fantasy/tavern"
           ]
         },
         {
           "number": 2,
           "name": "shire",
           "paths": [
-            "/mnt/usb/fantasy/shire"
+            "/mnt/usb/media/fantasy/shire"
           ]
         }
       ]
@@ -160,7 +163,8 @@
           "number": 1,
           "name": "curated-rotation",
           "paths": [
-            "/mnt/usb/mixed/curated-rotation"
+            "/home/tommy/crtv/local-media/mixed/curated-rotation",
+            "/mnt/usb/media/mixed/curated-rotation"
           ]
         }
       ]
