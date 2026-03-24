@@ -89,6 +89,7 @@ Important env vars:
 - `PROGRAM_ORDER_RANDOM`
 - `DOWNSAMPLE_HEIGHT`
 - `ENABLE_CROP_FILTER`
+- `CROP_X_PCT`
 - `CROP_FILTER`
 - `ENABLE_RANDOM_START`
 - `DEFAULT_START_VIBE`
@@ -105,6 +106,7 @@ Important env vars:
 
 ## Defaults
 - Crop-to-fill is on by default so the screen fills vertically.
+- The crop is slightly right-biased by default with `CROP_X_PCT=55`.
 - Playback downsampling stays on by default with `DOWNSAMPLE_HEIGHT=240`.
 - Random clip starts are on by default.
 
