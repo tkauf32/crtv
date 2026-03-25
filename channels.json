@@ -78,13 +78,13 @@
     },
     {
       "number": 5,
-      "name": "seasonal",
+      "name": "chill",
       "channels": [
         {
           "number": 1,
-          "name": "current-season",
+          "name": "chill",
           "paths": [
-            "/mnt/usb/media/seasonal/current-season"
+            "/mnt/usb/media/chill"
           ]
         }
       ]
