@@ -8,7 +8,7 @@ The control model is now:
 - Second encoder: `programs` across the selected vibe
 - Organization only: `channels` inside each vibe group related media directories
 
-Programs are individual files discovered by flattening all channel `path` and `paths` entries inside the selected vibe. When a program ends, the player can auto-advance within the current vibe.
+Programs are individual files discovered from each channel's `path` and `paths` entries. When a program ends, the player auto-advances to the next program in the current channel.
 
 ## Entrypoint
 Use `./crt_player.sh` as the master entrypoint.

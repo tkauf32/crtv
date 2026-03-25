@@ -1580,6 +1580,35 @@ switch_program_relative() {
   switch_with_recovery "$target" "$vibe_idx" 0 || true
 }
 
+switch_current_channel_program_relative() {
+  local delta="$1"
+  local selection=""
+  local vibe_idx=""
+  local channel_idx=""
+  local target=""
+
+  selection="$(current_selection || true)"
+  if [[ -z "$selection" ]]; then
+    log_msg warn "channel program switch ignored: no current selection"
+    return 1
+  fi
+
+  vibe_idx="${selection%% *}"
+  channel_idx="${selection##* }"
+  if ! channel_has_program_catalog "$vibe_idx" "$channel_idx"; then
+    log_msg warn "channel program switch ignored: vibe=${vibe_idx} channel=${channel_idx} has no program catalog"
+    return 1
+  fi
+
+  target="$(channel_url_by_index "$vibe_idx" "$channel_idx" "$delta" 2>/dev/null || true)"
+  if [[ -z "$target" ]]; then
+    log_msg warn "channel program switch ignored: vibe=${vibe_idx} channel=${channel_idx} has no playable program"
+    return 1
+  fi
+
+  switch_with_recovery "$target" "$vibe_idx" "$channel_idx" || true
+}
+
 read_keyboard_event() {
   local key=""
   if ! IFS= read -rsn1 -t "${1:-0.1}" key; then
@@ -1724,8 +1753,8 @@ run_controller() {
 
     eof_state="$(mpv_get_property "eof-reached" || true)"
     if is_true "$AUTO_ADVANCE_ON_END" && [[ "$eof_state" == "true" ]] && [[ "$last_eof_state" != "true" ]]; then
-      log_msg info "program ended; auto-advancing within current vibe"
-      switch_program_relative 1
+      log_msg info "program ended; auto-advancing within current channel"
+      switch_current_channel_program_relative 1
     fi
     last_eof_state="$eof_state"
 
