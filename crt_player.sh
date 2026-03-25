@@ -114,6 +114,7 @@ fi
 : "${MPV_LOG_EXCERPT_LINES:=80}"
 : "${AUTO_ADVANCE_ON_END:=1}"
 : "${AUTO_ADVANCE_POLL_SECONDS:=0.5}"
+: "${MONITOR_PID_FILE:=/tmp/crt_player_monitor.pid}"
 : "${RECOVER_TO_NEXT_ON_FAILURE:=1}"
 : "${MAX_RECOVERY_CHANNEL_TRIES:=5}"
 : "${AUTO_RECOVER_SHELL:=1}"
@@ -391,6 +392,46 @@ mpv_get_property_json() {
 
 new_switch_request_token() {
   printf '%s-%s\n' "$$" "$(date +%s%N)"
+}
+
+pid_is_live() {
+  local pid="${1:-}"
+  is_int "$pid" || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+current_monitor_pid() {
+  local pid=""
+
+  if [[ -f "$MONITOR_PID_FILE" ]]; then
+    pid="$(cat "$MONITOR_PID_FILE" 2>/dev/null || true)"
+  fi
+
+  if pid_is_live "$pid"; then
+    printf '%s\n' "$pid"
+    return 0
+  fi
+
+  rm -f "$MONITOR_PID_FILE" 2>/dev/null || true
+  return 1
+}
+
+ensure_background_monitor() {
+  local monitor_pid=""
+
+  if ! is_true "$AUTO_ADVANCE_ON_END"; then
+    return 0
+  fi
+
+  monitor_pid="$(current_monitor_pid || true)"
+  if [[ -n "$monitor_pid" ]]; then
+    return 0
+  fi
+
+  (
+    exec "$0" monitor
+  ) >/dev/null 2>&1 &
+  disown || true
 }
 
 set_switch_request_token() {
@@ -1609,6 +1650,24 @@ switch_current_channel_program_relative() {
   switch_with_recovery "$target" "$vibe_idx" "$channel_idx" || true
 }
 
+poll_for_program_end() {
+  local eof_state_ref="$1"
+  local last_eof_state_ref="$2"
+  local eof_state=""
+  local last_eof_state=""
+
+  eof_state="$(mpv_get_property "eof-reached" || true)"
+  last_eof_state="${!last_eof_state_ref:-}"
+  printf -v "$eof_state_ref" '%s' "$eof_state"
+
+  if is_true "$AUTO_ADVANCE_ON_END" && [[ "$eof_state" == "true" ]] && [[ "$last_eof_state" != "true" ]]; then
+    log_msg info "program ended; auto-advancing within current channel"
+    switch_current_channel_program_relative 1
+  fi
+
+  printf -v "$last_eof_state_ref" '%s' "$eof_state"
+}
+
 read_keyboard_event() {
   local key=""
   if ! IFS= read -rsn1 -t "${1:-0.1}" key; then
@@ -1751,12 +1810,7 @@ run_controller() {
       event="$(read_keyboard_event "$key_timeout" || true)"
     fi
 
-    eof_state="$(mpv_get_property "eof-reached" || true)"
-    if is_true "$AUTO_ADVANCE_ON_END" && [[ "$eof_state" == "true" ]] && [[ "$last_eof_state" != "true" ]]; then
-      log_msg info "program ended; auto-advancing within current channel"
-      switch_current_channel_program_relative 1
-    fi
-    last_eof_state="$eof_state"
+    poll_for_program_end eof_state last_eof_state
 
     [[ -n "$event" ]] || continue
     cmd="${event%%:*}"
@@ -1795,6 +1849,28 @@ run_controller() {
     elif [[ "$cmd" == "url" ]] && [[ -n "$arg" ]]; then
       switch_with_recovery "$arg" 0 0 || true
     fi
+  done
+}
+
+monitor_controller() {
+  local eof_state=""
+  local last_eof_state=""
+  local poll_sleep="$AUTO_ADVANCE_POLL_SECONDS"
+
+  if ! awk "BEGIN { exit !(${poll_sleep} > 0) }"; then
+    poll_sleep="0.5"
+  fi
+
+  printf '%s\n' "$$" > "$MONITOR_PID_FILE"
+  trap 'rm -f "$MONITOR_PID_FILE" 2>/dev/null || true' EXIT
+
+  while true; do
+    if socket_live; then
+      poll_for_program_end eof_state last_eof_state
+    else
+      last_eof_state=""
+    fi
+    sleep "$poll_sleep"
   done
 }
 
@@ -1895,6 +1971,7 @@ case "$COMMAND" in
     REQUEST_TOKEN="$(new_switch_request_token)"
     set_switch_request_token "$REQUEST_TOKEN"
     ensure_shell
+    ensure_background_monitor
     if resolve_target "$VIBE" "$CHANNEL" "$URL"; then
       [[ -n "$RESOLVED_TARGET" ]] && switch_with_recovery "$RESOLVED_TARGET" "${RESOLVED_VIBE_INDEX:-0}" "${RESOLVED_CHANNEL_INDEX:-0}" "$REQUEST_TOKEN"
     fi
@@ -1906,6 +1983,7 @@ case "$COMMAND" in
     need_cmd flock
     REQUEST_TOKEN="$(new_switch_request_token)"
     set_switch_request_token "$REQUEST_TOKEN"
+    ensure_background_monitor
     if [[ "$PROGRAM_NEXT" -eq 1 || "$PROGRAM_PREV" -eq 1 ]]; then
       if [[ "$RANDOM_SWITCH" -eq 1 ]]; then
         die "--program-next/--program-prev cannot be combined with --random"
@@ -1993,6 +2071,11 @@ case "$COMMAND" in
     need_cmd jq
     need_cmd flock
     run_controller
+    ;;
+  monitor)
+    need_cmd socat
+    need_cmd jq
+    monitor_controller
     ;;
   volume)
     need_cmd "$AMIXER_BIN"
