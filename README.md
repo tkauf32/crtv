@@ -1,125 +1,105 @@
 # crtv
-Raspberry Pi CRT video player built around two rotary encoders.
 
-## Model
-The control model is now:
+Raspberry Pi offline-first mini TV player for a CRT-style display and two rotary knobs.
 
-- Top encoder: `vibes`
-- Second encoder: `programs` across the selected vibe
-- Organization only: `channels` inside each vibe group related media directories
+## Direction
 
-Programs are individual files discovered from each channel's `path` and `paths` entries. When a program ends, the player auto-advances to the next program in the current channel.
+The old shell-heavy flow is now considered legacy prototype code. The new target runtime is a long-lived Python service that owns:
 
-## Entrypoint
-Use `./crt_player.sh` as the master entrypoint.
+- hardware input
+- playback state
+- content discovery
+- channel navigation
+- display/power mode
 
-### Commands
-- `./crt_player.sh list`
-- `./crt_player.sh start [--vibe <index|name>] [--channel <index|name>] [--url <url>]`
-- `./crt_player.sh switch [--vibe <index|name>] [--channel <index|name>] [--url <url>] [--random]`
-- `./crt_player.sh run [--vibe <index|name>] [--channel <index|name>] [--url <url>]`
-- `./crt_player.sh volume --up|--down [--step N]`
+The first refactor pass lives in the `crtv/` package and uses one persistent `mpv` process over IPC instead of spawning fresh playback processes on each action.
+
+## What Is Preserved
+
+- Existing environment-variable configuration
+- Existing `channels.json` structure and media paths
+- Existing GPIO pin assignments:
+  - left knob: `GPIO17/27/22`
+  - right knob: `GPIO23/24/25`
+- Existing mpv/CRT rendering direction
+- Battery-management integration only through env-configured commands until exact PiSugar commands are confirmed on-device
+
+## What Is Replaced
+
+- Shell-script orchestration as the primary control path
+- One-shot `switch` subprocesses for normal device operation
+- Temp-file-based playback state coordination
+- Separate control systems for `start`, `switch`, and `run`
+
+## New Runtime
+
+- `crtv_service.py`
+- `python3 -m crtv.app`
+
+`encoder_control.py` is now a compatibility wrapper around the new service entrypoint.
+
+## Module Layout
+
+- `crtv/config.py`: legacy env/config ingestion
+- `crtv/models.py`: domain and runtime state
+- `crtv/library.py`: offline media discovery from channel paths
+- `crtv/player.py`: persistent mpv IPC playback and playlist control
+- `crtv/power.py`: display power and battery hooks
+- `crtv/input.py`: rotary decoding, debounce, false-turn rejection, click routing
+- `crtv/controller.py`: central state machine for channel, volume, menu, and standby mode
+- `crtv/app.py`: service bootstrap
+
+## Controls
+
+Current default service behavior:
+
+- Left knob turn: change vibe
+- Right knob turn: change channel
+- Left click: cycle `browse -> volume -> menu -> browse`
+- Right click in browse: skip to next clip in current channel
+- Right click in volume: mute/unmute
+- Right click in menu: activate menu action
+- Menu includes `power-off-mode`, which pauses playback, mutes audio, and turns off the display without shutting the Pi down
+- Menu also includes `shutdown-now`, which is the explicit full-shutdown path
 
 ## Channel Config
-`channels.json` now uses a `vibes -> channels -> paths` structure.
 
-Example:
-```json
-{
-  "vibes": [
-    {
-      "number": 1,
-      "name": "focus",
-      "channels": [
-        {
-          "number": 1,
-          "name": "study-lofi",
-          "paths": [
-            "/home/tommy/crtv/local-media/focus/study-lofi"
-          ]
-        }
-      ]
-    },
-    {
-      "number": 4,
-      "name": "television",
-      "channels": [
-        {
-          "number": 1,
-          "name": "sitcoms",
-          "paths": [
-            "/mnt/usb/television/sitcoms"
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
+`channels.json` still uses `vibes -> channels -> paths`.
 
 `paths` entries can be:
-- A directory containing media files
-- A single file path
-- A remote URL
 
-Program ordering is deterministic by default. Set `PROGRAM_ORDER_RANDOM=1` in `.env` if you want directory-backed channels shuffled whenever they are resolved.
+- a directory containing media files
+- a single file path
+- a remote URL
 
-## Input Events
-`run` supports an optional line-based `INPUT_EVENT_CMD`.
+The new library layer is offline-first. Remote/streaming sources remain supported structurally, but the redesign optimizes for local media on mounted storage.
 
-Supported events:
-- `next`
-- `prev`
-- `random`
-- `vibe-next`
-- `vibe-prev`
-- `vibe:<index|name>`
-- `channel:<index|name>`
-- `program-next`
-- `program-prev`
-- `url:<url_or_path>`
-- `quit`
+## Migration
 
-## Env
-Important env vars:
-- `CHANNELS_FILE`
-- `VIBE_INDEX_FILE`
-- `CHANNEL_INDEX_DIR`
-- `PROGRAM_INDEX_DIR`
-- `PROGRAM_ORDER_RANDOM`
-- `DOWNSAMPLE_HEIGHT`
-- `ENABLE_CROP_FILTER`
-- `CROP_X_PCT`
-- `CROP_FILTER`
-- `KEEP_ASPECT`
-- `ENABLE_RANDOM_START`
-- `DEFAULT_START_VIBE`
-- `DEFAULT_START_CHANNEL`
-- `AUTO_ADVANCE_ON_END`
-- `AUTO_ADVANCE_POLL_SECONDS`
-- `STATIC_FILE`
-- `LOG_FILE`
-- `MPV_LOG_FILE`
+See [`docs/architecture.md`](/Users/tomkaufmann/crtv/docs/architecture.md) for preserve-vs-replace decisions, target architecture, and phased migration.
 
-## Hardware
-- Encoder 1 on `GPIO17/27/22` changes vibes.
-- Encoder 2 on `GPIO23/24/25` changes programs inside the current vibe.
+Legacy scripts remain in the repo only as reference and fallback during migration.
 
-## Defaults
-- Aspect preservation is off by default with `KEEP_ASPECT=no`, so playback stretches edge-to-edge.
-- Crop is off by default.
-- Playback downsampling stays on by default with `DOWNSAMPLE_HEIGHT=240`.
-- Random clip starts are on by default.
+## PiSugar
 
-## Current Sample Vibes
-The sample config currently starts with:
-- `focus`
-- `relax`
-- `meditate`
-- `television`
-- `seasonal`
-- `ambience`
-- `nature`
-- `music`
-- `fantasy`
-- `mixed`
+The new power layer now expects the PiSugar command model documented in [`pisugar_commands_reference.md`](/Users/tomkaufmann/crtv/pisugar_commands_reference.md):
+
+- status queries via `nc` to `127.0.0.1:8423`
+- safe-shutdown configuration
+- soft-poweroff shell configuration
+- external power and battery status reads
+
+Relevant env knobs:
+
+- `PISUGAR_ENABLED`
+- `PISUGAR_HOST`
+- `PISUGAR_PORT`
+- `PISUGAR_TCP_CMD`
+- `PISUGAR_SOCKET_CMD`
+- `PISUGAR_SOFT_POWEROFF_ENABLED`
+- `PISUGAR_SOFT_POWEROFF_SHELL`
+- `PISUGAR_SAFE_SHUTDOWN_LEVEL`
+- `PISUGAR_SAFE_SHUTDOWN_DELAY`
+- `SHUTDOWN_CMD`
+- `DISPLAY_OFF_CMD`
+- `DISPLAY_ON_CMD`

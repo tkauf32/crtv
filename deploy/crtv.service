@@ -1,0 +1,16 @@
+[Unit]
+Description=CRTV Mini TV Service
+After=network-online.target graphical.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tommy
+WorkingDirectory=/home/tommy/crtv
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/tommy/crtv/crtv_service.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
