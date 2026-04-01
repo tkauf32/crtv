@@ -95,8 +95,8 @@ class InputRouter:
         from .controller import TvController
 
         self.left = RotaryEncoder(
-            name="left",
-            pins=config.left_encoder,
+            name="top",
+            pins=config.top_encoder,
             config=config,
             callbacks=RotaryCallbacks(
                 on_clockwise=controller.on_left_clockwise,
@@ -105,8 +105,8 @@ class InputRouter:
             ),
         )
         self.right = RotaryEncoder(
-            name="right",
-            pins=config.right_encoder,
+            name="bottom",
+            pins=config.bottom_encoder,
             config=config,
             callbacks=RotaryCallbacks(
                 on_clockwise=controller.on_right_clockwise,

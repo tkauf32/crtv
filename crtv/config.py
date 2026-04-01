@@ -51,8 +51,8 @@ class AppConfig:
     auto_random_start: bool
     random_start_min_pct: int
     random_start_max_pct: int
-    left_encoder: EncoderPins
-    right_encoder: EncoderPins
+    top_encoder: EncoderPins
+    bottom_encoder: EncoderPins
     button_bounce: float
     pin_bounce: float
     detent_transitions: int
@@ -111,8 +111,8 @@ def load_config(repo_root: Path) -> AppConfig:
         auto_random_start=_truthy(os.environ.get("ENABLE_RANDOM_START"), default=True),
         random_start_min_pct=int(os.environ.get("RANDOM_START_MIN_PCT", "20")),
         random_start_max_pct=int(os.environ.get("RANDOM_START_MAX_PCT", "80")),
-        left_encoder=EncoderPins(a=17, b=27, sw=22),
-        right_encoder=EncoderPins(a=23, b=24, sw=25),
+        top_encoder=EncoderPins(a=17, b=27, sw=22),
+        bottom_encoder=EncoderPins(a=23, b=24, sw=25),
         button_bounce=float(os.environ.get("BUTTON_BOUNCE", "0.05")),
         pin_bounce=float(os.environ.get("PIN_BOUNCE", "0.001")),
         detent_transitions=int(os.environ.get("DETENT_TRANSITIONS", "4")),
@@ -141,7 +141,7 @@ def load_config(repo_root: Path) -> AppConfig:
         safe_shutdown_delay_seconds=int(
             os.environ.get("PISUGAR_SAFE_SHUTDOWN_DELAY", "30")
         ),
-        initial_volume=int(os.environ.get("INITIAL_VOLUME", "65")),
+        initial_volume=int(os.environ.get("INITIAL_VOLUME", "10")),
     )
 
 

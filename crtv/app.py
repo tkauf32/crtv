@@ -58,6 +58,10 @@ def main(argv: list[str] | None = None) -> int:
     controller.start()
     logging.info("crtv service started: %s", controller.state.status_line)
     logging.info("battery integration: %s", power.battery_status())
+    logging.info("controls: top knob turn=vibe, top knob click=cycle browse/volume/menu")
+    logging.info(
+        "controls: bottom knob turn=channel in browse, volume in volume mode; bottom knob click=next clip or activate/mute"
+    )
 
     if not args.headless:
         InputRouter(config, controller)
