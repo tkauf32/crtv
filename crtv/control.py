@@ -76,15 +76,28 @@ class ControlServer:
                         continue
 
     def _dispatch(self, payload: str) -> dict[str, object]:
-        command = payload.strip().lower()
-        if command == "standby on":
+        parts = payload.strip().split()
+        if len(parts) == 2 and parts[0].lower() == "standby" and parts[1].lower() == "on":
             status = self.controller.enter_standby()
-        elif command == "standby off":
+        elif len(parts) == 2 and parts[0].lower() == "standby" and parts[1].lower() == "off":
             status = self.controller.exit_standby()
-        elif command == "standby toggle":
+        elif len(parts) == 2 and parts[0].lower() == "standby" and parts[1].lower() == "toggle":
             status = self.controller.toggle_standby()
-        elif command == "standby status":
+        elif len(parts) == 2 and parts[0].lower() == "standby" and parts[1].lower() == "status":
             status = self.controller.standby_status()
+        elif len(parts) == 2 and parts[0].lower() == "brightness" and parts[1].lower() == "status":
+            status = self.controller.brightness_status()
+        elif len(parts) == 3 and parts[0].lower() == "brightness" and parts[1].lower() == "set":
+            try:
+                brightness_pct = int(parts[2])
+            except ValueError:
+                return {"ok": False, "error": f"invalid brightness level: {parts[2]}"}
+            if brightness_pct < 0 or brightness_pct > 100:
+                return {"ok": False, "error": "brightness level must be between 0 and 100"}
+            try:
+                status = self.controller.set_brightness_pct(brightness_pct)
+            except RuntimeError as exc:
+                return {"ok": False, "error": str(exc)}
         else:
             return {"ok": False, "error": f"unsupported command: {payload}"}
         return {"ok": True, **status}

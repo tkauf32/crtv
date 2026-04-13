@@ -53,6 +53,7 @@ class RuntimeState:
     muted: bool = False
     standby: bool = False
     vibe_output_enabled: bool = True
+    brightness_pct: int | None = None
     mode: UiMode = UiMode.BROWSE
     menu_index: int = 0
     power_save: bool = False

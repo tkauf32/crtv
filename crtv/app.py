@@ -102,13 +102,21 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_control_command(config: AppConfig, command: list[str]) -> int:
-    if command[:1] != ["standby"] or len(command) != 2 or command[1] not in {
+    is_valid_standby = command[:1] == ["standby"] and len(command) == 2 and command[1] in {
         "on",
         "off",
         "toggle",
         "status",
-    }:
-        print("usage: crtv_service.py standby {on|off|toggle|status}", file=sys.stderr)
+    }
+    is_valid_brightness_status = command == ["brightness", "status"]
+    is_valid_brightness_set = (
+        len(command) == 3 and command[:2] == ["brightness", "set"]
+    )
+    if not (is_valid_standby or is_valid_brightness_status or is_valid_brightness_set):
+        print(
+            "usage: crtv_service.py standby {on|off|toggle|status} | brightness status | brightness set <0-100>",
+            file=sys.stderr,
+        )
         return 2
     try:
         response = send_control_command(config.control_socket, " ".join(command))

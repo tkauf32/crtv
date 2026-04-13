@@ -30,6 +30,7 @@ class TvController:
             self.power.apply_pisugar_policy()
             self.player.ensure_running()
             self.player.set_volume(self.state.volume)
+            self._sync_brightness_state()
             self._play_current_channel()
 
     def enter_standby(self) -> dict[str, str | bool]:
@@ -54,11 +55,33 @@ class TvController:
         with self.lock:
             return self._standby_status_unlocked()
 
+    def set_brightness_pct(self, brightness_pct: int) -> dict[str, int | bool | None]:
+        with self.lock:
+            status = self.power.set_brightness_pct(brightness_pct)
+            self._sync_brightness_state()
+            logging.info("brightness set to %s%%", status["brightness_pct"])
+            self._update_status("brightness")
+            return self._brightness_status_unlocked()
+
+    def brightness_status(self) -> dict[str, int | bool | None]:
+        with self.lock:
+            return self._brightness_status_unlocked()
+
     def _standby_status_unlocked(self) -> dict[str, str | bool]:
         return {
             "standby": self.state.standby,
             "mode": self.state.mode.value,
             "status_line": self.state.status_line,
+        }
+
+    def _brightness_status_unlocked(self) -> dict[str, int | bool | None]:
+        status = self.power.brightness_status()
+        return {
+            "supported": status["supported"],
+            "brightness_pct": status["brightness_pct"],
+            "brightness": status["brightness"],
+            "max_brightness": status["max_brightness"],
+            "standby": self.state.standby,
         }
 
     def on_left_clockwise(self) -> None:
@@ -186,6 +209,8 @@ class TvController:
         parts.append(f"vibe={vibe.number}:{vibe.name}")
         parts.append(f"channel={channel.number}:{channel.name}")
         parts.append(f"volume={self.state.volume}")
+        if self.state.brightness_pct is not None:
+            parts.append(f"brightness={self.state.brightness_pct}")
         if self.state.mode == UiMode.MENU:
             parts.append(
                 f"menu={self.state.available_menu_items[self.state.menu_index]}"
@@ -196,6 +221,12 @@ class TvController:
         parts.append(f"battery={battery.battery_percent}")
         parts.append(f"plugged={battery.external_power}")
         self.state.status_line = " ".join(parts)
+
+    def _sync_brightness_state(self) -> None:
+        status = self.power.brightness_status()
+        self.state.brightness_pct = (
+            int(status["brightness_pct"]) if status["brightness_pct"] is not None else None
+        )
 
     def _enter_standby_locked(self) -> None:
         if self.state.standby:

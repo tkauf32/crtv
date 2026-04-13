@@ -22,32 +22,71 @@ class BatterySnapshot:
 class BacklightController:
     def __init__(self, config: AppConfig):
         self.config = config
-        self._bl_power = self._resolve_bl_power_path()
+        self._backlight_dir = self._resolve_backlight_dir()
+        self._bl_power = self._backlight_dir / "bl_power" if self._backlight_dir else None
+        self._brightness = (
+            self._backlight_dir / "brightness" if self._backlight_dir else None
+        )
+        self._saved_brightness: str | None = None
 
     def turn_off(self) -> None:
+        self._save_brightness()
+        self._write_brightness("0")
         if self._write_bl_power("1"):
             return
         self._run(self.config.display_off_command)
 
     def turn_on(self) -> None:
         if self._write_bl_power("0"):
+            self._restore_brightness()
             return
         self._run(self.config.display_on_command)
+        self._restore_brightness()
 
-    def _resolve_bl_power_path(self) -> Path | None:
+    def brightness_status(self) -> dict[str, int | bool | None]:
+        max_brightness = self._read_int("max_brightness")
+        current_brightness = self._read_int("brightness")
+        if max_brightness is None or current_brightness is None or max_brightness <= 0:
+            return {
+                "supported": False,
+                "brightness": None,
+                "max_brightness": max_brightness,
+                "brightness_pct": None,
+            }
+        brightness_pct = round((current_brightness * 100) / max_brightness)
+        return {
+            "supported": True,
+            "brightness": current_brightness,
+            "max_brightness": max_brightness,
+            "brightness_pct": max(0, min(100, brightness_pct)),
+        }
+
+    def set_brightness_pct(self, brightness_pct: int) -> dict[str, int | bool | None]:
+        status = self.brightness_status()
+        if not status["supported"]:
+            raise RuntimeError("brightness control unavailable: no backlight sysfs path found")
+        max_brightness = int(status["max_brightness"])
+        clamped = max(0, min(100, brightness_pct))
+        raw_value = round((clamped * max_brightness) / 100)
+        if clamped > 0:
+            raw_value = max(1, raw_value)
+        self._saved_brightness = str(raw_value)
+        if not self._write_brightness(str(raw_value)):
+            raise RuntimeError("failed to write backlight brightness")
+        return self.brightness_status()
+
+    def _resolve_backlight_dir(self) -> Path | None:
         if self.config.display_backlight_path is not None:
-            candidate = self.config.display_backlight_path / "bl_power"
-            if candidate.exists():
-                return candidate
+            if self.config.display_backlight_path.is_dir():
+                return self.config.display_backlight_path
             return None
 
         base = Path("/sys/class/backlight")
         if not base.is_dir():
             return None
         for entry in sorted(base.iterdir()):
-            candidate = entry / "bl_power"
-            if candidate.exists():
-                return candidate
+            if entry.is_dir():
+                return entry
         return None
 
     def _write_bl_power(self, value: str) -> bool:
@@ -58,6 +97,37 @@ class BacklightController:
             return True
         except OSError:
             return False
+
+    def _save_brightness(self) -> None:
+        if self._brightness is None:
+            return
+        try:
+            self._saved_brightness = self._brightness.read_text(encoding="utf-8").strip()
+        except OSError:
+            self._saved_brightness = None
+
+    def _restore_brightness(self) -> None:
+        if self._saved_brightness is None:
+            return
+        if self._write_brightness(self._saved_brightness):
+            self._saved_brightness = None
+
+    def _write_brightness(self, value: str) -> bool:
+        if self._brightness is None:
+            return False
+        try:
+            self._brightness.write_text(value, encoding="utf-8")
+            return True
+        except OSError:
+            return False
+
+    def _read_int(self, name: str) -> int | None:
+        if self._backlight_dir is None:
+            return None
+        try:
+            return int((self._backlight_dir / name).read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            return None
 
     @staticmethod
     def _run(command: tuple[str, ...]) -> None:
@@ -78,6 +148,12 @@ class PowerManager:
 
     def exit_low_power_mode(self) -> None:
         self.backlight.turn_on()
+
+    def brightness_status(self) -> dict[str, int | bool | None]:
+        return self.backlight.brightness_status()
+
+    def set_brightness_pct(self, brightness_pct: int) -> dict[str, int | bool | None]:
+        return self.backlight.set_brightness_pct(brightness_pct)
 
     def apply_pisugar_policy(self) -> None:
         if not self.config.pisugar_enabled:

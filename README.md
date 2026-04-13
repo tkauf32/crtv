@@ -67,6 +67,8 @@ Current default service behavior:
   - `python3 -m crtv.app standby off`
   - `python3 -m crtv.app standby toggle`
   - `python3 -m crtv.app standby status`
+  - `python3 -m crtv.app brightness status`
+  - `python3 -m crtv.app brightness set 35`
 
 Startup volume now defaults to `10%` unless overridden with `INITIAL_VOLUME`.
 
