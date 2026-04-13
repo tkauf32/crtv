@@ -59,7 +59,9 @@ class AppConfig:
     detent_cooldown_seconds: float
     display_off_command: tuple[str, ...]
     display_on_command: tuple[str, ...]
+    display_backlight_path: Path | None
     shutdown_command: tuple[str, ...]
+    control_socket: Path
     pisugar_host: str
     pisugar_port: int
     pisugar_enabled: bool
@@ -123,7 +125,13 @@ def load_config(repo_root: Path) -> AppConfig:
         display_on_command=split_command(
             os.environ.get("DISPLAY_ON_CMD", "vcgencmd display_power 1")
         ),
+        display_backlight_path=(
+            Path(os.environ["DISPLAY_BACKLIGHT_PATH"])
+            if os.environ.get("DISPLAY_BACKLIGHT_PATH")
+            else None
+        ),
         shutdown_command=split_command(os.environ.get("SHUTDOWN_CMD", "sudo shutdown now")),
+        control_socket=Path(os.environ.get("CONTROL_SOCKET", "/tmp/crtv-control.sock")),
         pisugar_host=os.environ.get("PISUGAR_HOST", "127.0.0.1"),
         pisugar_port=int(os.environ.get("PISUGAR_PORT", "8423")),
         pisugar_enabled=_truthy(os.environ.get("PISUGAR_ENABLED"), default=True),

@@ -62,6 +62,11 @@ Current default service behavior:
 - Bottom knob click in `menu`: activate menu action
 - Menu includes `power-off-mode`, which pauses playback, mutes audio, and turns off the display without shutting the Pi down
 - Menu also includes `shutdown-now`, which is the explicit full-shutdown path
+- SSH/debug standby control is available through the running service:
+  - `python3 -m crtv.app standby on`
+  - `python3 -m crtv.app standby off`
+  - `python3 -m crtv.app standby toggle`
+  - `python3 -m crtv.app standby status`
 
 Startup volume now defaults to `10%` unless overridden with `INITIAL_VOLUME`.
 
@@ -106,3 +111,5 @@ Relevant env knobs:
 - `SHUTDOWN_CMD`
 - `DISPLAY_OFF_CMD`
 - `DISPLAY_ON_CMD`
+- `DISPLAY_BACKLIGHT_PATH`
+- `CONTROL_SOCKET`

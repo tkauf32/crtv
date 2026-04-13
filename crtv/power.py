@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from .config import AppConfig
 
@@ -18,17 +19,65 @@ class BatterySnapshot:
     temperature: str = "unknown"
 
 
+class BacklightController:
+    def __init__(self, config: AppConfig):
+        self.config = config
+        self._bl_power = self._resolve_bl_power_path()
+
+    def turn_off(self) -> None:
+        if self._write_bl_power("1"):
+            return
+        self._run(self.config.display_off_command)
+
+    def turn_on(self) -> None:
+        if self._write_bl_power("0"):
+            return
+        self._run(self.config.display_on_command)
+
+    def _resolve_bl_power_path(self) -> Path | None:
+        if self.config.display_backlight_path is not None:
+            candidate = self.config.display_backlight_path / "bl_power"
+            if candidate.exists():
+                return candidate
+            return None
+
+        base = Path("/sys/class/backlight")
+        if not base.is_dir():
+            return None
+        for entry in sorted(base.iterdir()):
+            candidate = entry / "bl_power"
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _write_bl_power(self, value: str) -> bool:
+        if self._bl_power is None:
+            return False
+        try:
+            self._bl_power.write_text(value, encoding="utf-8")
+            return True
+        except OSError:
+            return False
+
+    @staticmethod
+    def _run(command: tuple[str, ...]) -> None:
+        if not command:
+            return
+        subprocess.run(command, check=False)
+
+
 class PowerManager:
     def __init__(self, config: AppConfig):
         self.config = config
+        self.backlight = BacklightController(config)
         self._last_snapshot = BatterySnapshot(model="uninitialized")
         self._last_snapshot_at = 0.0
 
     def enter_low_power_mode(self) -> None:
-        self._run(self.config.display_off_command)
+        self.backlight.turn_off()
 
     def exit_low_power_mode(self) -> None:
-        self._run(self.config.display_on_command)
+        self.backlight.turn_on()
 
     def apply_pisugar_policy(self) -> None:
         if not self.config.pisugar_enabled:

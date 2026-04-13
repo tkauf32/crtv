@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import signal
 import sys
 import time
 from pathlib import Path
 
-from .config import load_config, load_vibes
+from .config import AppConfig, load_config, load_vibes
+from .control import ControlServer, send_control_command
 from .controller import TvController
 from .input import InputRouter
 from .library import ContentLibrary
@@ -39,6 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Initialize playback and exit. Useful for smoke tests.",
     )
+    parser.add_argument(
+        "command",
+        nargs="*",
+        help="Optional control command, e.g. 'standby on'.",
+    )
     return parser
 
 
@@ -46,6 +53,10 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     repo_root = Path(__file__).resolve().parent.parent
     config = load_config(repo_root)
+
+    if args.command:
+        return _run_control_command(config, args.command)
+
     configure_logging(config.log_file)
     vibes = load_vibes(config)
     if not vibes:
@@ -56,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
     power = PowerManager(config)
     controller = TvController(config, library, player, power)
     controller.start()
+    control_server = ControlServer(config, controller)
+    control_server.start()
     logging.info("crtv service started: %s", controller.state.status_line)
     logging.info("battery integration: %s", power.battery_status())
     logging.info("controls: top knob turn=vibe, top knob click=cycle browse/volume/menu")
@@ -82,8 +95,27 @@ def main(argv: list[str] | None = None) -> int:
     while not stop:
         time.sleep(1.0)
 
+    control_server.stop()
     player.terminate()
     logging.info("crtv service stopped")
+    return 0
+
+
+def _run_control_command(config: AppConfig, command: list[str]) -> int:
+    if command[:1] != ["standby"] or len(command) != 2 or command[1] not in {
+        "on",
+        "off",
+        "toggle",
+        "status",
+    }:
+        print("usage: crtv_service.py standby {on|off|toggle|status}", file=sys.stderr)
+        return 2
+    try:
+        response = send_control_command(config.control_socket, " ".join(command))
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(json.dumps(response))
     return 0
 
 

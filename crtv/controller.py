@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 
 from .config import AppConfig
@@ -30,6 +31,35 @@ class TvController:
             self.player.ensure_running()
             self.player.set_volume(self.state.volume)
             self._play_current_channel()
+
+    def enter_standby(self) -> dict[str, str | bool]:
+        with self.lock:
+            self._enter_standby_locked()
+            return self._standby_status_unlocked()
+
+    def exit_standby(self) -> dict[str, str | bool]:
+        with self.lock:
+            self._exit_standby_locked(prefix="wake")
+            return self._standby_status_unlocked()
+
+    def toggle_standby(self) -> dict[str, str | bool]:
+        with self.lock:
+            if self.state.standby:
+                self._exit_standby_locked(prefix="wake")
+            else:
+                self._enter_standby_locked()
+            return self._standby_status_unlocked()
+
+    def standby_status(self) -> dict[str, str | bool]:
+        with self.lock:
+            return self._standby_status_unlocked()
+
+    def _standby_status_unlocked(self) -> dict[str, str | bool]:
+        return {
+            "standby": self.state.standby,
+            "mode": self.state.mode.value,
+            "status_line": self.state.status_line,
+        }
 
     def on_left_clockwise(self) -> None:
         with self.lock:
@@ -80,14 +110,14 @@ class TvController:
             elif self.state.mode == UiMode.MENU:
                 self.state.mode = UiMode.BROWSE
             else:
-                self._wake_from_standby()
+                self._exit_standby_locked(prefix="wake")
                 return
             self._update_status()
 
     def on_right_click(self) -> None:
         with self.lock:
             if self.state.mode == UiMode.STANDBY:
-                self._wake_from_standby()
+                self._exit_standby_locked(prefix="wake")
                 return
             if self.state.mode == UiMode.MENU:
                 self._activate_menu_item()
@@ -131,7 +161,7 @@ class TvController:
         elif action == "volume":
             self.state.mode = UiMode.VOLUME
         elif action == "power-off-mode":
-            self._enter_standby()
+            self._enter_standby_locked()
             return
         elif action == "shutdown-now":
             self._shutdown_device()
@@ -160,34 +190,54 @@ class TvController:
             parts.append(
                 f"menu={self.state.available_menu_items[self.state.menu_index]}"
             )
-        if self.state.power_save:
+        if self.state.standby:
             parts.append("power=standby")
         battery = self.power.read_battery_snapshot()
         parts.append(f"battery={battery.battery_percent}")
         parts.append(f"plugged={battery.external_power}")
         self.state.status_line = " ".join(parts)
 
-    def _enter_standby(self) -> None:
+    def _enter_standby_locked(self) -> None:
+        if self.state.standby:
+            self._update_status("standby")
+            return
+        logging.info("entering standby")
         self.player.pause()
+        logging.info("audio stopped")
         self.player.mute(True)
+        logging.info("audio muted")
         self.power.enter_low_power_mode()
+        logging.info("display off")
+        self.state.vibe_output_enabled = False
+        logging.info("vibe disabled")
         self.state.mode = UiMode.STANDBY
+        self.state.standby = True
         self.state.power_save = True
         self._update_status()
 
     def _wake_if_needed(self) -> bool:
         if self.state.mode != UiMode.STANDBY:
             return False
-        self._wake_from_standby()
+        self._exit_standby_locked(prefix="wake")
         return True
 
-    def _wake_from_standby(self) -> None:
+    def _exit_standby_locked(self, prefix: str | None = None) -> None:
+        if not self.state.standby:
+            self._update_status(prefix)
+            return
+        logging.info("exiting standby")
         self.power.exit_low_power_mode()
-        self.player.mute(False)
+        logging.info("display on")
+        self.player.mute(self.state.muted)
+        logging.info("audio %s", "muted" if self.state.muted else "unmuted")
         self.player.play()
+        logging.info("audio started")
+        self.state.vibe_output_enabled = True
+        logging.info("vibe enabled")
         self.state.mode = UiMode.BROWSE
+        self.state.standby = False
         self.state.power_save = False
-        self._update_status("wake")
+        self._update_status(prefix)
 
     def _shutdown_device(self) -> None:
         self.player.pause()

@@ -51,6 +51,8 @@ class RuntimeState:
     clip_index: int = 0
     volume: int = 65
     muted: bool = False
+    standby: bool = False
+    vibe_output_enabled: bool = True
     mode: UiMode = UiMode.BROWSE
     menu_index: int = 0
     power_save: bool = False
