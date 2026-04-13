@@ -67,6 +67,15 @@ class TvController:
         with self.lock:
             return self._brightness_status_unlocked()
 
+    def set_volume_pct(self, volume: int) -> dict[str, int | bool]:
+        with self.lock:
+            self._set_volume_locked(volume)
+            return self._volume_status_unlocked()
+
+    def volume_status(self) -> dict[str, int | bool]:
+        with self.lock:
+            return self._volume_status_unlocked()
+
     def _standby_status_unlocked(self) -> dict[str, str | bool]:
         return {
             "standby": self.state.standby,
@@ -81,6 +90,13 @@ class TvController:
             "brightness_pct": status["brightness_pct"],
             "brightness": status["brightness"],
             "max_brightness": status["max_brightness"],
+            "standby": self.state.standby,
+        }
+
+    def _volume_status_unlocked(self) -> dict[str, int | bool]:
+        return {
+            "volume": self.state.volume,
+            "muted": self.state.muted,
             "standby": self.state.standby,
         }
 
@@ -166,7 +182,10 @@ class TvController:
         self._play_current_channel()
 
     def _adjust_volume(self, delta: int) -> None:
-        self.state.volume = max(0, min(100, self.state.volume + delta))
+        self._set_volume_locked(self.state.volume + delta)
+
+    def _set_volume_locked(self, volume: int) -> None:
+        self.state.volume = max(0, min(100, volume))
         self.player.set_volume(self.state.volume)
         self.state.muted = False
         self.player.mute(False)

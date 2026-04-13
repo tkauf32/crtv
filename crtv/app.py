@@ -75,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.info(
         "controls: bottom knob turn=channel in browse, volume in volume mode; bottom knob click=next clip or activate/mute"
     )
+    logging.info("controls: standby button gpio=%s", config.standby_button_pin)
 
     if not args.headless:
         InputRouter(config, controller)

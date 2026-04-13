@@ -53,10 +53,18 @@ class AppConfig:
     random_start_max_pct: int
     top_encoder: EncoderPins
     bottom_encoder: EncoderPins
+    standby_button_pin: int
+    standby_button_enabled: bool
     button_bounce: float
     pin_bounce: float
     detent_transitions: int
     detent_cooldown_seconds: float
+    ads1115_enabled: bool
+    ads1115_bus: int
+    ads1115_address: int
+    ads1115_channel: int
+    ads1115_poll_seconds: float
+    ads1115_deadband_pct: int
     display_off_command: tuple[str, ...]
     display_on_command: tuple[str, ...]
     display_backlight_path: Path | None
@@ -115,10 +123,20 @@ def load_config(repo_root: Path) -> AppConfig:
         random_start_max_pct=int(os.environ.get("RANDOM_START_MAX_PCT", "80")),
         top_encoder=EncoderPins(a=17, b=27, sw=22),
         bottom_encoder=EncoderPins(a=23, b=24, sw=25),
+        standby_button_pin=int(os.environ.get("STANDBY_BUTTON_PIN", "16")),
+        standby_button_enabled=_truthy(
+            os.environ.get("STANDBY_BUTTON_ENABLED"), default=True
+        ),
         button_bounce=float(os.environ.get("BUTTON_BOUNCE", "0.05")),
         pin_bounce=float(os.environ.get("PIN_BOUNCE", "0.001")),
         detent_transitions=int(os.environ.get("DETENT_TRANSITIONS", "4")),
         detent_cooldown_seconds=float(os.environ.get("DETENT_COOLDOWN_SECONDS", "0.40")),
+        ads1115_enabled=_truthy(os.environ.get("ADS1115_ENABLED"), default=True),
+        ads1115_bus=int(os.environ.get("ADS1115_BUS", "1")),
+        ads1115_address=int(os.environ.get("ADS1115_ADDRESS", "0x48"), 0),
+        ads1115_channel=int(os.environ.get("ADS1115_CHANNEL", "3")),
+        ads1115_poll_seconds=float(os.environ.get("ADS1115_POLL_SECONDS", "0.20")),
+        ads1115_deadband_pct=int(os.environ.get("ADS1115_DEADBAND_PCT", "2")),
         display_off_command=split_command(
             os.environ.get("DISPLAY_OFF_CMD", "vcgencmd display_power 0")
         ),

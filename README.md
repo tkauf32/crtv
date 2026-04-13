@@ -62,6 +62,8 @@ Current default service behavior:
 - Bottom knob click in `menu`: activate menu action
 - Menu includes `power-off-mode`, which pauses playback, mutes audio, and turns off the display without shutting the Pi down
 - Menu also includes `shutdown-now`, which is the explicit full-shutdown path
+- Dedicated standby button on `GPIO16` can call the same standby toggle path as the SSH control
+- ADS1115 on I2C bus `1` at address `0x48`, channel `A3`, can linearly drive volume from a potentiometer
 - SSH/debug standby control is available through the running service:
   - `python3 -m crtv.app standby on`
   - `python3 -m crtv.app standby off`
@@ -115,3 +117,11 @@ Relevant env knobs:
 - `DISPLAY_ON_CMD`
 - `DISPLAY_BACKLIGHT_PATH`
 - `CONTROL_SOCKET`
+- `STANDBY_BUTTON_PIN`
+- `STANDBY_BUTTON_ENABLED`
+- `ADS1115_ENABLED`
+- `ADS1115_BUS`
+- `ADS1115_ADDRESS`
+- `ADS1115_CHANNEL`
+- `ADS1115_POLL_SECONDS`
+- `ADS1115_DEADBAND_PCT`

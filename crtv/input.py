@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,6 +13,14 @@ try:
     from gpiozero import Button
 except Exception:  # pragma: no cover - gpiozero is optional off-device
     Button = None  # type: ignore[assignment]
+
+try:
+    from smbus2 import SMBus
+except Exception:  # pragma: no cover - optional on Pi images
+    try:
+        from smbus import SMBus  # type: ignore[no-redef]
+    except Exception:  # pragma: no cover - optional off-device
+        SMBus = None  # type: ignore[assignment]
 
 
 TRANSITIONS = {
@@ -114,3 +124,114 @@ class InputRouter:
                 on_click=controller.on_right_click,
             ),
         )
+        self.standby_button = None
+        if config.standby_button_enabled:
+            self.standby_button = StandbyButton(config, controller)
+        self.volume_knob = None
+        if config.ads1115_enabled:
+            self.volume_knob = Ads1115VolumeKnob(config, controller)
+
+
+class StandbyButton:
+    def __init__(self, config: AppConfig, controller: "TvController"):
+        if Button is None:
+            raise RuntimeError("gpiozero is required on the Raspberry Pi runtime")
+        self.button = Button(
+            config.standby_button_pin,
+            pull_up=True,
+            bounce_time=config.button_bounce,
+        )
+        self.button.when_pressed = lambda: controller.toggle_standby()
+
+
+class Ads1115VolumeKnob:
+    CONVERSION_REGISTER = 0x00
+    CONFIG_REGISTER = 0x01
+    CONFIG_AIN3_SINGLE = 0x7000
+    CONFIG_PGA_4_096V = 0x0200
+    CONFIG_MODE_SINGLE = 0x0100
+    CONFIG_DR_128SPS = 0x0080
+    CONFIG_COMP_DISABLE = 0x0003
+    CONFIG_START = 0x8000
+
+    def __init__(self, config: AppConfig, controller: "TvController"):
+        self.config = config
+        self.controller = controller
+        self._last_pct: int | None = None
+        self._thread = threading.Thread(target=self._run, name="ads1115-volume", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        if SMBus is None:
+            logging.warning("ads1115 volume disabled: smbus module not available")
+            return
+
+        try:
+            bus = SMBus(self.config.ads1115_bus)
+        except OSError as exc:
+            logging.warning(
+                "ads1115 volume disabled: failed to open i2c bus %s (%s)",
+                self.config.ads1115_bus,
+                exc,
+            )
+            return
+
+        logging.info(
+            "ads1115 volume enabled: bus=%s addr=0x%02x channel=A%s",
+            self.config.ads1115_bus,
+            self.config.ads1115_address,
+            self.config.ads1115_channel,
+        )
+        try:
+            while True:
+                try:
+                    raw_value = self._read_single_ended(bus)
+                except OSError as exc:
+                    logging.warning("ads1115 read failed: %s", exc)
+                    time.sleep(max(1.0, self.config.ads1115_poll_seconds))
+                    continue
+                volume_pct = max(0, min(100, round((raw_value / 32767) * 100)))
+                if self._should_apply(volume_pct):
+                    self.controller.set_volume_pct(volume_pct)
+                    self._last_pct = volume_pct
+                time.sleep(self.config.ads1115_poll_seconds)
+        finally:
+            close = getattr(bus, "close", None)
+            if callable(close):
+                close()
+
+    def _read_single_ended(self, bus: SMBus) -> int:
+        mux_bits = {
+            0: 0x4000,
+            1: 0x5000,
+            2: 0x6000,
+            3: self.CONFIG_AIN3_SINGLE,
+        }.get(self.config.ads1115_channel, self.CONFIG_AIN3_SINGLE)
+        config_word = (
+            self.CONFIG_START
+            | mux_bits
+            | self.CONFIG_PGA_4_096V
+            | self.CONFIG_MODE_SINGLE
+            | self.CONFIG_DR_128SPS
+            | self.CONFIG_COMP_DISABLE
+        )
+        bus.write_i2c_block_data(
+            self.config.ads1115_address,
+            self.CONFIG_REGISTER,
+            [(config_word >> 8) & 0xFF, config_word & 0xFF],
+        )
+        time.sleep(0.01)
+        data = bus.read_i2c_block_data(
+            self.config.ads1115_address,
+            self.CONVERSION_REGISTER,
+            2,
+        )
+        raw_value = (data[0] << 8) | data[1]
+        if raw_value & 0x8000:
+            raw_value -= 0x10000
+        return max(0, raw_value)
+
+    def _should_apply(self, volume_pct: int) -> bool:
+        if self._last_pct is None:
+            return True
+        return abs(volume_pct - self._last_pct) >= self.config.ads1115_deadband_pct
