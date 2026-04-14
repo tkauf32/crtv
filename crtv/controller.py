@@ -194,6 +194,7 @@ class TvController:
     def _open_menu(self) -> None:
         self.state.mode = UiMode.MENU
         self.state.menu_editing = False
+        self.player.set_osd_font_size(56)
         self._update_status("menu-open")
 
     def _toggle_menu_edit(self) -> None:
@@ -206,6 +207,7 @@ class TvController:
             self._update_status("menu-view")
             return
         self.state.mode = UiMode.BROWSE
+        self.player.set_osd_font_size(24)
         self.player.clear_text()
         self._update_status("menu-close")
 
@@ -291,7 +293,6 @@ class TvController:
             else ""
         )
         line = f"{left:>8}  {current:^12}  {right:<8}".rstrip()
-        line = "\n".join([line] * 4)
         if self.state.menu_editing:
             line = f"{line}\n{'':>16}^"
         return line

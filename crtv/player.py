@@ -154,6 +154,9 @@ class MpvPlayer:
     def clear_text(self) -> None:
         self.command(["show-text", "", 0])
 
+    def set_osd_font_size(self, size: int) -> None:
+        self.command(["set_property", "options/osd-font-size", size])
+
     def terminate(self) -> None:
         if self.process and self.process.poll() is None:
             self.command(["quit"])
