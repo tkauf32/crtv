@@ -141,7 +141,12 @@ class StandbyButton:
             pull_up=True,
             bounce_time=config.button_bounce,
         )
-        self.button.when_pressed = lambda: controller.toggle_standby()
+        self.button.when_pressed = lambda: self._handle_press(controller)
+
+    @staticmethod
+    def _handle_press(controller: "TvController") -> None:
+        logging.info("standby button pressed")
+        controller.toggle_standby()
 
 
 class Ads1115VolumeKnob:
@@ -158,6 +163,8 @@ class Ads1115VolumeKnob:
         self.config = config
         self.controller = controller
         self._last_pct: int | None = None
+        self._baseline_pct: int | None = None
+        self._armed = False
         self._thread = threading.Thread(target=self._run, name="ads1115-volume", daemon=True)
         self._thread.start()
 
@@ -191,9 +198,10 @@ class Ads1115VolumeKnob:
                     time.sleep(max(1.0, self.config.ads1115_poll_seconds))
                     continue
                 volume_pct = max(0, min(100, round((raw_value / 32767) * 100)))
-                if self._should_apply(volume_pct):
+                if self._should_apply(raw_value, volume_pct):
                     self.controller.set_volume_pct(volume_pct)
                     self._last_pct = volume_pct
+                    logging.info("ads1115 volume set to %s%% raw=%s", volume_pct, raw_value)
                 time.sleep(self.config.ads1115_poll_seconds)
         finally:
             close = getattr(bus, "close", None)
@@ -231,7 +239,27 @@ class Ads1115VolumeKnob:
             raw_value -= 0x10000
         return max(0, raw_value)
 
-    def _should_apply(self, volume_pct: int) -> bool:
+    def _should_apply(self, raw_value: int, volume_pct: int) -> bool:
+        if raw_value <= 0:
+            return False
+        if not self._armed:
+            if self._baseline_pct is None:
+                self._baseline_pct = volume_pct
+                logging.info(
+                    "ads1115 baseline captured at %s%% raw=%s; waiting for pot movement",
+                    volume_pct,
+                    raw_value,
+                )
+                return False
+            if abs(volume_pct - self._baseline_pct) < self.config.ads1115_deadband_pct:
+                return False
+            self._armed = True
+            logging.info(
+                "ads1115 volume control armed at %s%% raw=%s",
+                volume_pct,
+                raw_value,
+            )
+            return True
         if self._last_pct is None:
             return True
         return abs(volume_pct - self._last_pct) >= self.config.ads1115_deadband_pct
