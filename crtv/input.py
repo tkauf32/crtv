@@ -161,7 +161,7 @@ class StandbyButton:
     @staticmethod
     def _handle_press(controller: "TvController") -> None:
         logging.info("standby button pressed")
-        controller.toggle_standby()
+        controller.on_standby_button()
 
     @staticmethod
     def _handle_release() -> None:

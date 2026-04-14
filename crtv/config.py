@@ -47,6 +47,7 @@ class AppConfig:
     crop_x_pct: int
     enable_crop_filter: bool
     volume_step_pct: int
+    brightness_step_pct: int
     target_ready_timeout_seconds: float
     auto_random_start: bool
     random_start_min_pct: int
@@ -72,6 +73,8 @@ class AppConfig:
     ads1115_deadband_pct: int
     alsa_init_enabled: bool
     alsa_master_volume_pct: int
+    audio_highpass_enabled: bool
+    audio_highpass_cutoff_hz: int
     display_off_command: tuple[str, ...]
     display_on_command: tuple[str, ...]
     display_backlight_path: Path | None
@@ -122,6 +125,7 @@ def load_config(repo_root: Path) -> AppConfig:
         crop_x_pct=int(os.environ.get("CROP_X_PCT", "55")),
         enable_crop_filter=_truthy(os.environ.get("ENABLE_CROP_FILTER"), default=False),
         volume_step_pct=int(os.environ.get("VOLUME_STEP_PCT", "10")),
+        brightness_step_pct=int(os.environ.get("BRIGHTNESS_STEP_PCT", "5")),
         target_ready_timeout_seconds=float(
             os.environ.get("TARGET_READY_TIMEOUT_SECONDS", "8")
         ),
@@ -159,6 +163,10 @@ def load_config(repo_root: Path) -> AppConfig:
         ads1115_deadband_pct=int(os.environ.get("ADS1115_DEADBAND_PCT", "2")),
         alsa_init_enabled=_truthy(os.environ.get("ALSA_INIT_ENABLED"), default=True),
         alsa_master_volume_pct=int(os.environ.get("ALSA_MASTER_VOLUME_PCT", "100")),
+        audio_highpass_enabled=_truthy(
+            os.environ.get("AUDIO_HIGHPASS_ENABLED"), default=True
+        ),
+        audio_highpass_cutoff_hz=int(os.environ.get("AUDIO_HIGHPASS_CUTOFF_HZ", "120")),
         display_off_command=split_command(
             os.environ.get("DISPLAY_OFF_CMD", "vcgencmd display_power 0")
         ),

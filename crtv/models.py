@@ -56,8 +56,13 @@ class RuntimeState:
     brightness_pct: int | None = None
     mode: UiMode = UiMode.BROWSE
     menu_index: int = 0
+    menu_editing: bool = False
+    timer_index: int = 0
     power_save: bool = False
     status_line: str = ""
     available_menu_items: list[str] = field(
-        default_factory=lambda: ["resume", "volume", "power-off-mode", "shutdown-now"]
+        default_factory=lambda: ["brightness", "timer"]
+    )
+    timer_options: list[str] = field(
+        default_factory=lambda: ["15m", "30m", "45m", "1h", "1.5h", "2h", "4h", "8h"]
     )

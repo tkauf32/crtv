@@ -105,7 +105,6 @@ class TvController:
             if self._wake_if_needed():
                 return
             if self.state.mode == UiMode.MENU:
-                self._move_menu(1)
                 return
             self._move_vibe(1)
 
@@ -114,7 +113,6 @@ class TvController:
             if self._wake_if_needed():
                 return
             if self.state.mode == UiMode.MENU:
-                self._move_menu(-1)
                 return
             self._move_vibe(-1)
 
@@ -122,10 +120,11 @@ class TvController:
         with self.lock:
             if self._wake_if_needed():
                 return
-            if self.state.mode == UiMode.VOLUME:
-                self._adjust_volume(self.config.volume_step_pct)
-            elif self.state.mode == UiMode.MENU:
-                self._move_menu(1)
+            if self.state.mode == UiMode.MENU:
+                if self.state.menu_editing:
+                    self._adjust_menu_value(1)
+                else:
+                    self._move_menu(1)
             else:
                 self._move_channel(1)
 
@@ -133,22 +132,17 @@ class TvController:
         with self.lock:
             if self._wake_if_needed():
                 return
-            if self.state.mode == UiMode.VOLUME:
-                self._adjust_volume(-self.config.volume_step_pct)
-            elif self.state.mode == UiMode.MENU:
-                self._move_menu(-1)
+            if self.state.mode == UiMode.MENU:
+                if self.state.menu_editing:
+                    self._adjust_menu_value(-1)
+                else:
+                    self._move_menu(-1)
             else:
                 self._move_channel(-1)
 
     def on_left_click(self) -> None:
         with self.lock:
-            if self.state.mode == UiMode.BROWSE:
-                self.state.mode = UiMode.VOLUME
-            elif self.state.mode == UiMode.VOLUME:
-                self.state.mode = UiMode.MENU
-            elif self.state.mode == UiMode.MENU:
-                self.state.mode = UiMode.BROWSE
-            else:
+            if self.state.mode == UiMode.STANDBY:
                 self._exit_standby_locked(prefix="wake")
                 return
             self._update_status()
@@ -159,15 +153,19 @@ class TvController:
                 self._exit_standby_locked(prefix="wake")
                 return
             if self.state.mode == UiMode.MENU:
-                self._activate_menu_item()
+                self._toggle_menu_edit()
                 return
-            if self.state.mode == UiMode.VOLUME:
-                self.state.muted = not self.state.muted
-                self.player.mute(self.state.muted)
-                self._update_status()
+            self._open_menu()
+
+    def on_standby_button(self) -> None:
+        with self.lock:
+            if self.state.mode == UiMode.MENU:
+                self._menu_back()
                 return
-            self.player.cycle_playlist(1)
-            self._update_status("skip-next")
+            if self.state.mode == UiMode.STANDBY:
+                self._exit_standby_locked(prefix="wake")
+                return
+            self._enter_standby_locked()
 
     def _move_vibe(self, delta: int) -> None:
         self.state.current_vibe_index = (self.state.current_vibe_index + delta) % self.library.vibe_count()
@@ -181,9 +179,6 @@ class TvController:
         self.state.clip_index = 0
         self._play_current_channel()
 
-    def _adjust_volume(self, delta: int) -> None:
-        self._set_volume_locked(self.state.volume + delta)
-
     def _set_volume_locked(self, volume: int) -> None:
         self.state.volume = max(0, min(100, volume))
         self.player.set_volume(self.state.volume)
@@ -193,21 +188,38 @@ class TvController:
 
     def _move_menu(self, delta: int) -> None:
         size = len(self.state.available_menu_items)
-        self.state.menu_index = (self.state.menu_index + delta) % size
+        self.state.menu_index = max(0, min(size - 1, self.state.menu_index + delta))
         self._update_status()
 
-    def _activate_menu_item(self) -> None:
-        action = self.state.available_menu_items[self.state.menu_index]
-        if action == "resume":
-            self.state.mode = UiMode.BROWSE
-        elif action == "volume":
-            self.state.mode = UiMode.VOLUME
-        elif action == "power-off-mode":
-            self._enter_standby_locked()
+    def _open_menu(self) -> None:
+        self.state.mode = UiMode.MENU
+        self.state.menu_editing = False
+        self._update_status("menu-open")
+
+    def _toggle_menu_edit(self) -> None:
+        self.state.menu_editing = not self.state.menu_editing
+        self._update_status("menu-edit" if self.state.menu_editing else "menu-view")
+
+    def _menu_back(self) -> None:
+        if self.state.menu_editing:
+            self.state.menu_editing = False
+            self._update_status("menu-view")
             return
-        elif action == "shutdown-now":
-            self._shutdown_device()
-            return
+        self.state.mode = UiMode.BROWSE
+        self._update_status("menu-close")
+
+    def _adjust_menu_value(self, delta: int) -> None:
+        item = self.state.available_menu_items[self.state.menu_index]
+        if item == "brightness":
+            current = self.state.brightness_pct or 0
+            self.power.set_brightness_pct(
+                max(0, min(100, current + delta * self.config.brightness_step_pct))
+            )
+            self._sync_brightness_state()
+            logging.info("menu brightness set to %s%%", self.state.brightness_pct)
+        elif item == "timer":
+            size = len(self.state.timer_options)
+            self.state.timer_index = max(0, min(size - 1, self.state.timer_index + delta))
         self._update_status()
 
     def _play_current_channel(self) -> None:
@@ -231,9 +243,11 @@ class TvController:
         if self.state.brightness_pct is not None:
             parts.append(f"brightness={self.state.brightness_pct}")
         if self.state.mode == UiMode.MENU:
-            parts.append(
-                f"menu={self.state.available_menu_items[self.state.menu_index]}"
-            )
+            current_item = self.state.available_menu_items[self.state.menu_index]
+            parts.append(f"menu={current_item}")
+            parts.append(f"menu_state={'edit' if self.state.menu_editing else 'view'}")
+            if current_item == "timer":
+                parts.append(f"timer={self.state.timer_options[self.state.timer_index]}")
         if self.state.standby:
             parts.append("power=standby")
         battery = self.power.read_battery_snapshot()

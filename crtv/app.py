@@ -71,11 +71,11 @@ def main(argv: list[str] | None = None) -> int:
     control_server.start()
     logging.info("crtv service started: %s", controller.state.status_line)
     logging.info("battery integration: %s", power.battery_status())
-    logging.info("controls: top knob turn=vibe, top knob click=cycle browse/volume/menu")
+    logging.info("controls: top knob turn=vibe")
     logging.info(
-        "controls: bottom knob turn=channel in browse, volume in volume mode; bottom knob click=next clip or activate/mute"
+        "controls: bottom knob turn=channel in browse, menu nav/edit in menu; bottom knob click=open menu and toggle edit"
     )
-    logging.info("controls: standby button gpio=%s", config.standby_button_pin)
+    logging.info("controls: standby button gpio=%s; acts as back in menu", config.standby_button_pin)
 
     input_router = None
     if not args.headless:

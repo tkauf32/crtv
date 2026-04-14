@@ -55,13 +55,12 @@ Current default service behavior:
 
 - Top knob turn: change vibe
 - Bottom knob turn in `browse`: change channel
-- Top knob click: cycle `browse -> volume -> menu -> browse`
-- Bottom knob turn in `volume`: adjust volume
-- Bottom knob click in `browse`: skip to next clip in current channel
-- Bottom knob click in `volume`: mute/unmute
-- Bottom knob click in `menu`: activate menu action
-- Menu includes `power-off-mode`, which pauses playback, mutes audio, and turns off the display without shutting the Pi down
-- Menu also includes `shutdown-now`, which is the explicit full-shutdown path
+- Bottom knob click in `browse`: open menu carousel
+- Bottom knob turn in `menu`: move left/right between `brightness` and `timer`
+- Bottom knob click in `menu`: enter/exit edit mode for the current menu item
+- Bottom knob turn while editing `brightness`: adjust brightness
+- Bottom knob turn while editing `timer`: cycle placeholder timer choices
+- Standby button toggles standby normally, but acts as back while the menu is open
 - Dedicated standby button on `GPIO16` can call the same standby toggle path as the SSH control
 - ADS1115 on I2C bus `1` at address `0x48`, channel `A3`, can linearly drive volume from a potentiometer
 - SSH/debug standby control is available through the running service:
@@ -132,3 +131,5 @@ Relevant env knobs:
 - `ADS1115_DEADBAND_PCT`
 - `ALSA_INIT_ENABLED`
 - `ALSA_MASTER_VOLUME_PCT`
+- `AUDIO_HIGHPASS_ENABLED`
+- `AUDIO_HIGHPASS_CUTOFF_HZ`

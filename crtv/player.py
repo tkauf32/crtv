@@ -54,6 +54,9 @@ class MpvPlayer:
             f"--keepaspect={self.config.keep_aspect}",
             f"--log-file={self.config.mpv_log_file}",
         ]
+        af = self._build_af_chain()
+        if af:
+            args.append(f"--af={af}")
         vf = self._build_vf_chain()
         if vf:
             args.append(f"--vf={vf}")
@@ -161,4 +164,10 @@ class MpvPlayer:
                 filters.append(
                     f"crop=ih*4/3:ih:(iw-ih*4/3)*({self.config.crop_x_pct}/100):0"
                 )
+        return ",".join(filters)
+
+    def _build_af_chain(self) -> str:
+        filters: list[str] = []
+        if self.config.audio_highpass_enabled:
+            filters.append(f"lavfi=[highpass=f={self.config.audio_highpass_cutoff_hz}]")
         return ",".join(filters)
