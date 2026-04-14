@@ -259,23 +259,52 @@ class TvController:
     def _update_osd(self, prefix: str | None = None) -> None:
         if self.state.mode != UiMode.MENU:
             return
+        self.player.show_text(self._render_menu_osd(prefix), duration_ms=4000)
+
+    def _render_menu_osd(self, prefix: str | None = None) -> str:
         current_item = self.state.available_menu_items[self.state.menu_index]
-        cards = []
-        for idx, item in enumerate(self.state.available_menu_items):
-            label = item.upper()
-            if idx == self.state.menu_index:
-                label = f"[ {label} ]"
-            cards.append(label)
-        lines = ["MENU"]
-        lines.append("   ".join(cards))
+        header = r"{\an5\fs18\1c&H9AD9FF&\bord2\shad1\pos(400,120)}MENU"
+        carousel = self._render_menu_carousel()
+        detail_lines = []
         if current_item == "brightness":
-            lines.append(f"BRIGHTNESS: {self.state.brightness_pct or 0}%")
+            detail_lines.append(f"BRIGHTNESS  {self.state.brightness_pct or 0}%")
         elif current_item == "timer":
-            lines.append(f"TIMER: {self.state.timer_options[self.state.timer_index]}")
-        lines.append("EDIT MODE" if self.state.menu_editing else "NAV MODE")
+            detail_lines.append(f"TIMER  {self.state.timer_options[self.state.timer_index]}")
+        detail_lines.append("EDIT MODE" if self.state.menu_editing else "NAV MODE")
         if prefix:
-            lines.append(prefix.upper())
-        self.player.show_text("\n".join(lines), duration_ms=4000)
+            detail_lines.append(prefix.upper())
+        detail = (
+            r"{\an5\fs15\1c&HFFFFFF&\bord2\shad1\pos(400,260)}"
+            + r"\N".join(self._escape_ass(line) for line in detail_lines)
+        )
+        return "".join([header, carousel, detail])
+
+    def _render_menu_carousel(self) -> str:
+        base_x = 400
+        y = 190
+        spacing = 180
+        parts = []
+        for idx, item in enumerate(self.state.available_menu_items):
+            distance = idx - self.state.menu_index
+            x = base_x + (distance * spacing)
+            label = self._escape_ass(item.upper())
+            if distance == 0:
+                parts.append(
+                    rf"{{\an5\fs28\1c&HFFFFFF&\bord3\shad1\pos({x},{y})}}[ {label} ]"
+                )
+            elif abs(distance) == 1:
+                parts.append(
+                    rf"{{\an5\fs18\1c&H8A8A8A&\bord2\shad1\pos({x},{y})}}{label}"
+                )
+            else:
+                parts.append(
+                    rf"{{\an5\fs14\1c&H555555&\bord1\shad0\pos({x},{y})}}{label}"
+                )
+        return "".join(parts)
+
+    @staticmethod
+    def _escape_ass(value: str) -> str:
+        return value.replace("\\", r"\\").replace("{", r"\{").replace("}", r"\}")
 
     def _sync_brightness_state(self) -> None:
         status = self.power.brightness_status()
