@@ -141,12 +141,22 @@ class StandbyButton:
             pull_up=True,
             bounce_time=config.button_bounce,
         )
+        logging.info(
+            "standby button initialized: gpio=%s pressed=%s",
+            config.standby_button_pin,
+            self.button.is_pressed,
+        )
         self.button.when_pressed = lambda: self._handle_press(controller)
+        self.button.when_released = self._handle_release()
 
     @staticmethod
     def _handle_press(controller: "TvController") -> None:
         logging.info("standby button pressed")
         controller.toggle_standby()
+
+    @staticmethod
+    def _handle_release() -> Callable[[], None]:
+        return lambda: logging.info("standby button released")
 
 
 class Ads1115VolumeKnob:
@@ -165,6 +175,8 @@ class Ads1115VolumeKnob:
         self._last_pct: int | None = None
         self._baseline_pct: int | None = None
         self._armed = False
+        self._last_reported_raw: int | None = None
+        self._last_debug_log_at = 0.0
         self._thread = threading.Thread(target=self._run, name="ads1115-volume", daemon=True)
         self._thread.start()
 
@@ -198,6 +210,7 @@ class Ads1115VolumeKnob:
                     time.sleep(max(1.0, self.config.ads1115_poll_seconds))
                     continue
                 volume_pct = max(0, min(100, round((raw_value / 32767) * 100)))
+                self._maybe_log_debug(raw_value, volume_pct)
                 if self._should_apply(raw_value, volume_pct):
                     self.controller.set_volume_pct(volume_pct)
                     self._last_pct = volume_pct
@@ -263,3 +276,14 @@ class Ads1115VolumeKnob:
         if self._last_pct is None:
             return True
         return abs(volume_pct - self._last_pct) >= self.config.ads1115_deadband_pct
+
+    def _maybe_log_debug(self, raw_value: int, volume_pct: int) -> None:
+        now = time.monotonic()
+        if self._last_reported_raw is None or abs(raw_value - self._last_reported_raw) >= 128:
+            logging.info("ads1115 sample raw=%s pct=%s armed=%s", raw_value, volume_pct, self._armed)
+            self._last_reported_raw = raw_value
+            self._last_debug_log_at = now
+            return
+        if now - self._last_debug_log_at >= 5.0:
+            logging.info("ads1115 sample raw=%s pct=%s armed=%s", raw_value, volume_pct, self._armed)
+            self._last_debug_log_at = now
