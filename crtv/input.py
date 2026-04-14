@@ -133,6 +133,8 @@ class InputRouter:
 
 
 class StandbyButton:
+    POLL_SECONDS = 0.05
+
     def __init__(self, config: AppConfig, controller: "TvController"):
         if Button is None:
             raise RuntimeError("gpiozero is required on the Raspberry Pi runtime")
@@ -146,8 +148,14 @@ class StandbyButton:
             config.standby_button_pin,
             self.button.is_pressed,
         )
-        self.button.when_pressed = lambda: self._handle_press(controller)
-        self.button.when_released = self._handle_release()
+        self._last_pressed = bool(self.button.is_pressed)
+        self._thread = threading.Thread(
+            target=self._poll,
+            args=(controller,),
+            name="standby-button",
+            daemon=True,
+        )
+        self._thread.start()
 
     @staticmethod
     def _handle_press(controller: "TvController") -> None:
@@ -155,8 +163,19 @@ class StandbyButton:
         controller.toggle_standby()
 
     @staticmethod
-    def _handle_release() -> Callable[[], None]:
-        return lambda: logging.info("standby button released")
+    def _handle_release() -> None:
+        logging.info("standby button released")
+
+    def _poll(self, controller: "TvController") -> None:
+        while True:
+            pressed = bool(self.button.is_pressed)
+            if pressed != self._last_pressed:
+                self._last_pressed = pressed
+                if pressed:
+                    self._handle_press(controller)
+                else:
+                    self._handle_release()
+            time.sleep(self.POLL_SECONDS)
 
 
 class Ads1115VolumeKnob:
