@@ -63,8 +63,11 @@ class AppConfig:
     ads1115_bus: int
     ads1115_address: int
     ads1115_channel: int
+    ads1115_inverted: bool
     ads1115_poll_seconds: float
     ads1115_deadband_pct: int
+    alsa_init_enabled: bool
+    alsa_master_volume_pct: int
     display_off_command: tuple[str, ...]
     display_on_command: tuple[str, ...]
     display_backlight_path: Path | None
@@ -135,8 +138,11 @@ def load_config(repo_root: Path) -> AppConfig:
         ads1115_bus=int(os.environ.get("ADS1115_BUS", "1")),
         ads1115_address=int(os.environ.get("ADS1115_ADDRESS", "0x48"), 0),
         ads1115_channel=int(os.environ.get("ADS1115_CHANNEL", "3")),
+        ads1115_inverted=_truthy(os.environ.get("ADS1115_INVERTED"), default=True),
         ads1115_poll_seconds=float(os.environ.get("ADS1115_POLL_SECONDS", "0.20")),
         ads1115_deadband_pct=int(os.environ.get("ADS1115_DEADBAND_PCT", "2")),
+        alsa_init_enabled=_truthy(os.environ.get("ALSA_INIT_ENABLED"), default=True),
+        alsa_master_volume_pct=int(os.environ.get("ALSA_MASTER_VOLUME_PCT", "100")),
         display_off_command=split_command(
             os.environ.get("DISPLAY_OFF_CMD", "vcgencmd display_power 0")
         ),

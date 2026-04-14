@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -32,6 +33,7 @@ class MpvPlayer:
         env = os.environ.copy()
         env["DISPLAY"] = self.config.display
         env["XAUTHORITY"] = self.config.xauthority
+        self._normalize_alsa_volume()
 
         args = [
             "mpv",
@@ -63,6 +65,22 @@ class MpvPlayer:
             text=True,
         )
         self._wait_for_socket()
+
+    def _normalize_alsa_volume(self) -> None:
+        if not self.config.alsa_init_enabled:
+            return
+        target = max(0, min(100, self.config.alsa_master_volume_pct))
+        try:
+            subprocess.run(
+                ["amixer", "sset", "Master", f"{target}%"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            logging.info("alsa master volume normalized to %s%%", target)
+        except OSError as exc:
+            logging.warning("failed to normalize alsa master volume: %s", exc)
 
     def _wait_for_socket(self) -> None:
         deadline = time.monotonic() + self.config.target_ready_timeout_seconds

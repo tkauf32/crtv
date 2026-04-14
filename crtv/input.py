@@ -229,6 +229,8 @@ class Ads1115VolumeKnob:
                     time.sleep(max(1.0, self.config.ads1115_poll_seconds))
                     continue
                 volume_pct = max(0, min(100, round((raw_value / 32767) * 100)))
+                if self.config.ads1115_inverted:
+                    volume_pct = 100 - volume_pct
                 self._maybe_log_debug(raw_value, volume_pct)
                 if self._should_apply(raw_value, volume_pct):
                     self.controller.set_volume_pct(volume_pct)
