@@ -265,25 +265,35 @@ class TvController:
         current_item = self.state.available_menu_items[self.state.menu_index]
         header = "MENU"
         carousel = self._render_menu_carousel()
-        detail_lines = []
-        if current_item == "brightness":
-            detail_lines.append(f"BRIGHTNESS  {self.state.brightness_pct or 0}%")
-        elif current_item == "timer":
-            detail_lines.append(f"TIMER  {self.state.timer_options[self.state.timer_index]}")
-        detail_lines.append("EDIT MODE" if self.state.menu_editing else "NAV MODE")
-        if prefix:
-            detail_lines.append(prefix.upper())
-        return "\n".join(["", header, "", carousel, "", *detail_lines])
+        detail_lines: list[str] = []
+        if self.state.menu_editing:
+            if current_item == "brightness":
+                detail_lines.append(f"BRIGHTNESS  {self.state.brightness_pct or 0}%")
+            elif current_item == "timer":
+                detail_lines.append(f"TIMER  {self.state.timer_options[self.state.timer_index]}")
+            detail_lines.append("TURN TO ADJUST")
+            detail_lines.append("CLICK TO FINISH")
+        elif prefix in {"menu-open", "menu-close"}:
+            detail_lines.append("TURN TO BROWSE")
+            detail_lines.append("CLICK TO EDIT")
+        return "\n".join(["", "", header, "", carousel, "", *detail_lines])
 
     def _render_menu_carousel(self) -> str:
-        parts: list[str] = []
-        for idx, item in enumerate(self.state.available_menu_items):
-            label = item.upper()
-            if idx == self.state.menu_index:
-                parts.append(f"[ {label} ]")
-            else:
-                parts.append(label.lower())
-        return "     ".join(parts)
+        current = self.state.available_menu_items[self.state.menu_index].upper()
+        left = (
+            self.state.available_menu_items[self.state.menu_index - 1].lower()
+            if self.state.menu_index > 0
+            else ""
+        )
+        right = (
+            self.state.available_menu_items[self.state.menu_index + 1].lower()
+            if self.state.menu_index < len(self.state.available_menu_items) - 1
+            else ""
+        )
+        line = f"{left:>12}    {current:^18}    {right:<12}".rstrip()
+        if self.state.menu_editing:
+            line = f"{line}\n{'':>16}^"
+        return line
 
     def _sync_brightness_state(self) -> None:
         status = self.power.brightness_status()
