@@ -77,8 +77,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     logging.info("controls: standby button gpio=%s", config.standby_button_pin)
 
+    input_router = None
     if not args.headless:
-        InputRouter(config, controller)
+        input_router = InputRouter(config, controller)
 
     if args.once:
         return 0
