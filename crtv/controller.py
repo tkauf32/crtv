@@ -254,6 +254,28 @@ class TvController:
         parts.append(f"battery={battery.battery_percent}")
         parts.append(f"plugged={battery.external_power}")
         self.state.status_line = " ".join(parts)
+        self._update_osd(prefix)
+
+    def _update_osd(self, prefix: str | None = None) -> None:
+        if self.state.mode != UiMode.MENU:
+            return
+        current_item = self.state.available_menu_items[self.state.menu_index]
+        cards = []
+        for idx, item in enumerate(self.state.available_menu_items):
+            label = item.upper()
+            if idx == self.state.menu_index:
+                label = f"[ {label} ]"
+            cards.append(label)
+        lines = ["MENU"]
+        lines.append("   ".join(cards))
+        if current_item == "brightness":
+            lines.append(f"BRIGHTNESS: {self.state.brightness_pct or 0}%")
+        elif current_item == "timer":
+            lines.append(f"TIMER: {self.state.timer_options[self.state.timer_index]}")
+        lines.append("EDIT MODE" if self.state.menu_editing else "NAV MODE")
+        if prefix:
+            lines.append(prefix.upper())
+        self.player.show_text("\n".join(lines), duration_ms=4000)
 
     def _sync_brightness_state(self) -> None:
         status = self.power.brightness_status()

@@ -61,6 +61,7 @@ Current default service behavior:
 - Bottom knob turn while editing `brightness`: adjust brightness
 - Bottom knob turn while editing `timer`: cycle placeholder timer choices
 - Standby button toggles standby normally, but acts as back while the menu is open
+- Brightness edits default to 20-point steps
 - Dedicated standby button on `GPIO16` can call the same standby toggle path as the SSH control
 - ADS1115 on I2C bus `1` at address `0x48`, channel `A3`, can linearly drive volume from a potentiometer
 - SSH/debug standby control is available through the running service:

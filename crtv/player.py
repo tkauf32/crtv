@@ -145,6 +145,9 @@ class MpvPlayer:
     def cycle_playlist(self, delta: int) -> None:
         self.command(["playlist-next" if delta > 0 else "playlist-prev", "force"])
 
+    def show_text(self, text: str, duration_ms: int = 2000) -> None:
+        self.command(["show-text", text, duration_ms])
+
     def terminate(self) -> None:
         if self.process and self.process.poll() is None:
             self.command(["quit"])

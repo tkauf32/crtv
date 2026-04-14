@@ -125,7 +125,7 @@ def load_config(repo_root: Path) -> AppConfig:
         crop_x_pct=int(os.environ.get("CROP_X_PCT", "55")),
         enable_crop_filter=_truthy(os.environ.get("ENABLE_CROP_FILTER"), default=False),
         volume_step_pct=int(os.environ.get("VOLUME_STEP_PCT", "10")),
-        brightness_step_pct=int(os.environ.get("BRIGHTNESS_STEP_PCT", "5")),
+        brightness_step_pct=int(os.environ.get("BRIGHTNESS_STEP_PCT", "20")),
         target_ready_timeout_seconds=float(
             os.environ.get("TARGET_READY_TIMEOUT_SECONDS", "8")
         ),
