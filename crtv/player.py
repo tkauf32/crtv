@@ -51,6 +51,9 @@ class MpvPlayer:
             "--prefetch-playlist=yes",
             "--audio-display=no",
             "--osc=no",
+            "--osd-align-x=center",
+            "--osd-align-y=center",
+            "--osd-font-size=24",
             f"--keepaspect={self.config.keep_aspect}",
             f"--log-file={self.config.mpv_log_file}",
         ]

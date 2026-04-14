@@ -263,7 +263,7 @@ class TvController:
 
     def _render_menu_osd(self, prefix: str | None = None) -> str:
         current_item = self.state.available_menu_items[self.state.menu_index]
-        header = r"{\an5\fs18\1c&H9AD9FF&\bord2\shad1\pos(400,120)}MENU"
+        header = "MENU"
         carousel = self._render_menu_carousel()
         detail_lines = []
         if current_item == "brightness":
@@ -273,38 +273,17 @@ class TvController:
         detail_lines.append("EDIT MODE" if self.state.menu_editing else "NAV MODE")
         if prefix:
             detail_lines.append(prefix.upper())
-        detail = (
-            r"{\an5\fs15\1c&HFFFFFF&\bord2\shad1\pos(400,260)}"
-            + r"\N".join(self._escape_ass(line) for line in detail_lines)
-        )
-        return "".join([header, carousel, detail])
+        return "\n".join(["", header, "", carousel, "", *detail_lines])
 
     def _render_menu_carousel(self) -> str:
-        base_x = 400
-        y = 190
-        spacing = 180
-        parts = []
+        parts: list[str] = []
         for idx, item in enumerate(self.state.available_menu_items):
-            distance = idx - self.state.menu_index
-            x = base_x + (distance * spacing)
-            label = self._escape_ass(item.upper())
-            if distance == 0:
-                parts.append(
-                    rf"{{\an5\fs28\1c&HFFFFFF&\bord3\shad1\pos({x},{y})}}[ {label} ]"
-                )
-            elif abs(distance) == 1:
-                parts.append(
-                    rf"{{\an5\fs18\1c&H8A8A8A&\bord2\shad1\pos({x},{y})}}{label}"
-                )
+            label = item.upper()
+            if idx == self.state.menu_index:
+                parts.append(f"[ {label} ]")
             else:
-                parts.append(
-                    rf"{{\an5\fs14\1c&H555555&\bord1\shad0\pos({x},{y})}}{label}"
-                )
-        return "".join(parts)
-
-    @staticmethod
-    def _escape_ass(value: str) -> str:
-        return value.replace("\\", r"\\").replace("{", r"\{").replace("}", r"\}")
+                parts.append(label.lower())
+        return "     ".join(parts)
 
     def _sync_brightness_state(self) -> None:
         status = self.power.brightness_status()
