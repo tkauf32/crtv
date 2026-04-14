@@ -151,6 +151,9 @@ class MpvPlayer:
     def show_text(self, text: str, duration_ms: int = 2000) -> None:
         self.command(["show-text", text, duration_ms])
 
+    def clear_text(self) -> None:
+        self.command(["show-text", "", 0])
+
     def terminate(self) -> None:
         if self.process and self.process.poll() is None:
             self.command(["quit"])

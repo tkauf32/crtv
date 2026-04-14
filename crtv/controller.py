@@ -206,6 +206,7 @@ class TvController:
             self._update_status("menu-view")
             return
         self.state.mode = UiMode.BROWSE
+        self.player.clear_text()
         self._update_status("menu-close")
 
     def _adjust_menu_value(self, delta: int) -> None:
@@ -263,7 +264,6 @@ class TvController:
 
     def _render_menu_osd(self, prefix: str | None = None) -> str:
         current_item = self.state.available_menu_items[self.state.menu_index]
-        header = "MENU"
         carousel = self._render_menu_carousel()
         detail_lines: list[str] = []
         if self.state.menu_editing:
@@ -276,7 +276,7 @@ class TvController:
         elif prefix in {"menu-open", "menu-close"}:
             detail_lines.append("TURN TO BROWSE")
             detail_lines.append("CLICK TO EDIT")
-        return "\n".join(["", "", header, "", carousel, "", *detail_lines])
+        return "\n".join(["", "", carousel, "", *detail_lines])
 
     def _render_menu_carousel(self) -> str:
         current = self.state.available_menu_items[self.state.menu_index].upper()
@@ -290,7 +290,8 @@ class TvController:
             if self.state.menu_index < len(self.state.available_menu_items) - 1
             else ""
         )
-        line = f"{left:>12}    {current:^18}    {right:<12}".rstrip()
+        line = f"{left:>8}  {current:^12}  {right:<8}".rstrip()
+        line = "\n".join([line] * 4)
         if self.state.menu_editing:
             line = f"{line}\n{'':>16}^"
         return line
