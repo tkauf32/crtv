@@ -64,6 +64,9 @@ class AppConfig:
     ads1115_address: int
     ads1115_channel: int
     ads1115_inverted: bool
+    ads1115_raw_min: int | None
+    ads1115_raw_max: int | None
+    ads1115_min_span: int
     ads1115_poll_seconds: float
     ads1115_deadband_pct: int
     alsa_init_enabled: bool
@@ -139,6 +142,17 @@ def load_config(repo_root: Path) -> AppConfig:
         ads1115_address=int(os.environ.get("ADS1115_ADDRESS", "0x48"), 0),
         ads1115_channel=int(os.environ.get("ADS1115_CHANNEL", "3")),
         ads1115_inverted=_truthy(os.environ.get("ADS1115_INVERTED"), default=True),
+        ads1115_raw_min=(
+            int(os.environ["ADS1115_RAW_MIN"])
+            if os.environ.get("ADS1115_RAW_MIN")
+            else None
+        ),
+        ads1115_raw_max=(
+            int(os.environ["ADS1115_RAW_MAX"])
+            if os.environ.get("ADS1115_RAW_MAX")
+            else None
+        ),
+        ads1115_min_span=int(os.environ.get("ADS1115_MIN_SPAN", "32")),
         ads1115_poll_seconds=float(os.environ.get("ADS1115_POLL_SECONDS", "0.20")),
         ads1115_deadband_pct=int(os.environ.get("ADS1115_DEADBAND_PCT", "2")),
         alsa_init_enabled=_truthy(os.environ.get("ALSA_INIT_ENABLED"), default=True),

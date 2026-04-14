@@ -192,8 +192,8 @@ class Ads1115VolumeKnob:
         self.config = config
         self.controller = controller
         self._last_pct: int | None = None
-        self._baseline_pct: int | None = None
-        self._armed = False
+        self._raw_min = config.ads1115_raw_min
+        self._raw_max = config.ads1115_raw_max
         self._last_reported_raw: int | None = None
         self._last_debug_log_at = 0.0
         self._thread = threading.Thread(target=self._run, name="ads1115-volume", daemon=True)
@@ -228,11 +228,10 @@ class Ads1115VolumeKnob:
                     logging.warning("ads1115 read failed: %s", exc)
                     time.sleep(max(1.0, self.config.ads1115_poll_seconds))
                     continue
-                volume_pct = max(0, min(100, round((raw_value / 32767) * 100)))
-                if self.config.ads1115_inverted:
-                    volume_pct = 100 - volume_pct
+                self._update_raw_bounds(raw_value)
+                volume_pct = self._map_volume_pct(raw_value)
                 self._maybe_log_debug(raw_value, volume_pct)
-                if self._should_apply(raw_value, volume_pct):
+                if volume_pct is not None and self._should_apply(volume_pct):
                     self.controller.set_volume_pct(volume_pct)
                     self._last_pct = volume_pct
                     logging.info("ads1115 volume set to %s%% raw=%s", volume_pct, raw_value)
@@ -273,38 +272,51 @@ class Ads1115VolumeKnob:
             raw_value -= 0x10000
         return max(0, raw_value)
 
-    def _should_apply(self, raw_value: int, volume_pct: int) -> bool:
-        if raw_value <= 0:
-            return False
-        if not self._armed:
-            if self._baseline_pct is None:
-                self._baseline_pct = volume_pct
-                logging.info(
-                    "ads1115 baseline captured at %s%% raw=%s; waiting for pot movement",
-                    volume_pct,
-                    raw_value,
-                )
-                return False
-            if abs(volume_pct - self._baseline_pct) < self.config.ads1115_deadband_pct:
-                return False
-            self._armed = True
-            logging.info(
-                "ads1115 volume control armed at %s%% raw=%s",
-                volume_pct,
-                raw_value,
-            )
-            return True
+    def _should_apply(self, volume_pct: int) -> bool:
         if self._last_pct is None:
             return True
         return abs(volume_pct - self._last_pct) >= self.config.ads1115_deadband_pct
 
-    def _maybe_log_debug(self, raw_value: int, volume_pct: int) -> None:
+    def _maybe_log_debug(self, raw_value: int, volume_pct: int | None) -> None:
         now = time.monotonic()
         if self._last_reported_raw is None or abs(raw_value - self._last_reported_raw) >= 128:
-            logging.info("ads1115 sample raw=%s pct=%s armed=%s", raw_value, volume_pct, self._armed)
+            logging.info(
+                "ads1115 sample raw=%s pct=%s range=%s..%s",
+                raw_value,
+                volume_pct,
+                self._raw_min,
+                self._raw_max,
+            )
             self._last_reported_raw = raw_value
             self._last_debug_log_at = now
             return
         if now - self._last_debug_log_at >= 5.0:
-            logging.info("ads1115 sample raw=%s pct=%s armed=%s", raw_value, volume_pct, self._armed)
+            logging.info(
+                "ads1115 sample raw=%s pct=%s range=%s..%s",
+                raw_value,
+                volume_pct,
+                self._raw_min,
+                self._raw_max,
+            )
             self._last_debug_log_at = now
+
+    def _update_raw_bounds(self, raw_value: int) -> None:
+        if self.config.ads1115_raw_min is None:
+            if self._raw_min is None or raw_value < self._raw_min:
+                self._raw_min = raw_value
+        if self.config.ads1115_raw_max is None:
+            if self._raw_max is None or raw_value > self._raw_max:
+                self._raw_max = raw_value
+
+    def _map_volume_pct(self, raw_value: int) -> int | None:
+        if self._raw_min is None or self._raw_max is None:
+            return None
+        span = self._raw_max - self._raw_min
+        if span < self.config.ads1115_min_span:
+            return None
+        normalized = (raw_value - self._raw_min) / span
+        normalized = max(0.0, min(1.0, normalized))
+        volume_pct = round(normalized * 100)
+        if self.config.ads1115_inverted:
+            volume_pct = 100 - volume_pct
+        return max(0, min(100, volume_pct))
