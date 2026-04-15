@@ -320,7 +320,10 @@ class Ads1115VolumeKnob:
         volume_pct = round(self._apply_log_curve(normalized) * 100)
         if self.config.ads1115_inverted:
             volume_pct = 100 - volume_pct
-        return max(0, min(100, volume_pct))
+        volume_pct = max(0, min(100, volume_pct))
+        if volume_pct <= self.config.ads1115_zero_threshold_pct:
+            return 0
+        return volume_pct
 
     def _apply_log_curve(self, normalized: float) -> float:
         if normalized <= 0.0:

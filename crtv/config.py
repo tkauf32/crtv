@@ -69,6 +69,7 @@ class AppConfig:
     ads1115_raw_max: int | None
     ads1115_min_span: int
     ads1115_log_floor_db: float
+    ads1115_zero_threshold_pct: int
     ads1115_poll_seconds: float
     ads1115_deadband_pct: int
     alsa_init_enabled: bool
@@ -159,6 +160,7 @@ def load_config(repo_root: Path) -> AppConfig:
         ),
         ads1115_min_span=int(os.environ.get("ADS1115_MIN_SPAN", "32")),
         ads1115_log_floor_db=float(os.environ.get("ADS1115_LOG_FLOOR_DB", "-40")),
+        ads1115_zero_threshold_pct=int(os.environ.get("ADS1115_ZERO_THRESHOLD_PCT", "3")),
         ads1115_poll_seconds=float(os.environ.get("ADS1115_POLL_SECONDS", "0.20")),
         ads1115_deadband_pct=int(os.environ.get("ADS1115_DEADBAND_PCT", "2")),
         alsa_init_enabled=_truthy(os.environ.get("ALSA_INIT_ENABLED"), default=True),

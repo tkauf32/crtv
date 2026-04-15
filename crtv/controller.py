@@ -11,6 +11,9 @@ from .power import PowerManager
 
 
 class TvController:
+    MENU_OSD_FONT_SIZE = 224
+    DEFAULT_OSD_FONT_SIZE = 24
+
     def __init__(
         self,
         config: AppConfig,
@@ -182,8 +185,8 @@ class TvController:
     def _set_volume_locked(self, volume: int) -> None:
         self.state.volume = max(0, min(100, volume))
         self.player.set_volume(self.state.volume)
-        self.state.muted = False
-        self.player.mute(False)
+        self.state.muted = self.state.volume == 0
+        self.player.mute(self.state.muted)
         self._update_status()
 
     def _move_menu(self, delta: int) -> None:
@@ -194,7 +197,7 @@ class TvController:
     def _open_menu(self) -> None:
         self.state.mode = UiMode.MENU
         self.state.menu_editing = False
-        self.player.set_osd_font_size(56)
+        self.player.set_osd_font_size(self.MENU_OSD_FONT_SIZE)
         self._update_status("menu-open")
 
     def _toggle_menu_edit(self) -> None:
@@ -207,7 +210,7 @@ class TvController:
             self._update_status("menu-view")
             return
         self.state.mode = UiMode.BROWSE
-        self.player.set_osd_font_size(24)
+        self.player.set_osd_font_size(self.DEFAULT_OSD_FONT_SIZE)
         self.player.clear_text()
         self._update_status("menu-close")
 
@@ -266,7 +269,7 @@ class TvController:
 
     def _render_menu_osd(self, prefix: str | None = None) -> str:
         current_item = self.state.available_menu_items[self.state.menu_index]
-        carousel = self._render_menu_carousel()
+        headline = current_item.upper()
         detail_lines: list[str] = []
         if self.state.menu_editing:
             if current_item == "brightness":
@@ -278,24 +281,7 @@ class TvController:
         elif prefix in {"menu-open", "menu-close"}:
             detail_lines.append("TURN TO BROWSE")
             detail_lines.append("CLICK TO EDIT")
-        return "\n".join(["", "", carousel, "", *detail_lines])
-
-    def _render_menu_carousel(self) -> str:
-        current = self.state.available_menu_items[self.state.menu_index].upper()
-        left = (
-            self.state.available_menu_items[self.state.menu_index - 1].lower()
-            if self.state.menu_index > 0
-            else ""
-        )
-        right = (
-            self.state.available_menu_items[self.state.menu_index + 1].lower()
-            if self.state.menu_index < len(self.state.available_menu_items) - 1
-            else ""
-        )
-        line = f"{left:>8}  {current:^12}  {right:<8}".rstrip()
-        if self.state.menu_editing:
-            line = f"{line}\n{'':>16}^"
-        return line
+        return "\n".join(["", headline, "", *detail_lines])
 
     def _sync_brightness_state(self) -> None:
         status = self.power.brightness_status()
