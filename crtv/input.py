@@ -310,6 +310,11 @@ class Ads1115VolumeKnob:
                 self._raw_max = raw_value
 
     def _map_volume_pct(self, raw_value: int) -> int | None:
+        if self.config.ads1115_inverted:
+            if raw_value >= self.config.ads1115_zero_raw_threshold:
+                return 0
+        elif raw_value <= self.config.ads1115_zero_raw_threshold:
+            return 0
         if self._raw_min is None or self._raw_max is None:
             return None
         span = self._raw_max - self._raw_min

@@ -67,6 +67,7 @@ class AppConfig:
     ads1115_inverted: bool
     ads1115_raw_min: int | None
     ads1115_raw_max: int | None
+    ads1115_zero_raw_threshold: int
     ads1115_min_span: int
     ads1115_log_floor_db: float
     ads1115_zero_threshold_pct: int
@@ -157,6 +158,9 @@ def load_config(repo_root: Path) -> AppConfig:
             int(os.environ["ADS1115_RAW_MAX"])
             if os.environ.get("ADS1115_RAW_MAX")
             else None
+        ),
+        ads1115_zero_raw_threshold=int(
+            os.environ.get("ADS1115_ZERO_RAW_THRESHOLD", "90")
         ),
         ads1115_min_span=int(os.environ.get("ADS1115_MIN_SPAN", "32")),
         ads1115_log_floor_db=float(os.environ.get("ADS1115_LOG_FLOOR_DB", "-40")),
