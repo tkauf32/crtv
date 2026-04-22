@@ -64,7 +64,6 @@ class RotaryEncoder:
         self.pin_sw = Button(pins.sw, pull_up=True, bounce_time=config.button_bounce)
         self.accumulator = 0
         self.last_ab = self._ab_value()
-        self.detent_ab = self.last_ab
         self.last_detent_time = 0.0
         self.last_transition_time = 0.0
 
@@ -81,7 +80,7 @@ class RotaryEncoder:
         return (self._logic_level(self.pin_a) << 1) | self._logic_level(self.pin_b)
 
     def _handle_ab_change(self) -> None:
-        now = time.time()
+        now = time.monotonic()
         if now - self.last_transition_time > self.TRANSITION_RESET_SECONDS:
             self.accumulator = 0
         current_ab = self._ab_value()
@@ -92,8 +91,11 @@ class RotaryEncoder:
             self.accumulator = 0
             return
 
-        self.accumulator += step
-        if current_ab != self.detent_ab or abs(self.accumulator) < self.detent_transitions:
+        if self.accumulator and (self.accumulator > 0) != (step > 0):
+            self.accumulator = step
+        else:
+            self.accumulator += step
+        if abs(self.accumulator) < self.detent_transitions:
             return
 
         if now - self.last_detent_time < self.detent_cooldown_seconds:

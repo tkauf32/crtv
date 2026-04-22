@@ -48,6 +48,7 @@ class AppConfig:
     enable_crop_filter: bool
     volume_step_pct: int
     brightness_step_pct: int
+    initial_brightness_pct: int
     target_ready_timeout_seconds: float
     auto_random_start: bool
     random_start_min_pct: int
@@ -134,6 +135,7 @@ def load_config(repo_root: Path) -> AppConfig:
         enable_crop_filter=_truthy(os.environ.get("ENABLE_CROP_FILTER"), default=False),
         volume_step_pct=int(os.environ.get("VOLUME_STEP_PCT", "10")),
         brightness_step_pct=int(os.environ.get("BRIGHTNESS_STEP_PCT", "20")),
+        initial_brightness_pct=int(os.environ.get("INITIAL_BRIGHTNESS_PCT", "35")),
         target_ready_timeout_seconds=float(
             os.environ.get("TARGET_READY_TIMEOUT_SECONDS", "8")
         ),
@@ -152,7 +154,7 @@ def load_config(repo_root: Path) -> AppConfig:
         button_bounce=float(os.environ.get("BUTTON_BOUNCE", "0.05")),
         pin_bounce=float(os.environ.get("PIN_BOUNCE", "0.001")),
         detent_transitions=int(os.environ.get("DETENT_TRANSITIONS", "4")),
-        detent_cooldown_seconds=float(os.environ.get("DETENT_COOLDOWN_SECONDS", "0.40")),
+        detent_cooldown_seconds=float(os.environ.get("DETENT_COOLDOWN_SECONDS", "0.12")),
         ads1115_enabled=_truthy(os.environ.get("ADS1115_ENABLED"), default=True),
         ads1115_bus=int(os.environ.get("ADS1115_BUS", "1")),
         ads1115_address=int(os.environ.get("ADS1115_ADDRESS", "0x48"), 0),

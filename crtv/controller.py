@@ -12,7 +12,7 @@ from .power import PowerManager
 
 
 class TvController:
-    MENU_OSD_FONT_SIZE = 224
+    MENU_OSD_FONT_SIZE = 96
     DEFAULT_OSD_FONT_SIZE = 24
 
     def __init__(
@@ -35,6 +35,7 @@ class TvController:
             self.player.ensure_running()
             self.player.set_volume(self.state.volume)
             self._sync_brightness_state()
+            self._ensure_startup_brightness()
             self.state.clip_index = self._initial_clip_index_for_current_channel()
             self._play_current_channel()
 
@@ -314,25 +315,39 @@ class TvController:
 
     def _render_menu_osd(self, prefix: str | None = None) -> str:
         current_item = self.state.available_menu_items[self.state.menu_index]
-        headline = current_item.upper()
-        detail_lines: list[str] = []
+        detail_lines = [
+            self._render_menu_line("brightness", f"{self.state.brightness_pct or 0}%"),
+            self._render_menu_line("timer", self.state.timer_options[self.state.timer_index]),
+            "",
+        ]
         if self.state.menu_editing:
-            if current_item == "brightness":
-                detail_lines.append(f"BRIGHTNESS  {self.state.brightness_pct or 0}%")
-            elif current_item == "timer":
-                detail_lines.append(f"TIMER  {self.state.timer_options[self.state.timer_index]}")
             detail_lines.append("TURN TO ADJUST")
             detail_lines.append("CLICK TO FINISH")
         elif prefix in {"menu-open", "menu-close"}:
-            detail_lines.append("TURN TO BROWSE")
+            detail_lines.append("TURN TO MOVE")
             detail_lines.append("CLICK TO EDIT")
-        return "\n".join(["", headline, "", *detail_lines])
+        return "\n".join(["", "MENU", "", *detail_lines])
+
+    def _render_menu_line(self, item: str, value: str) -> str:
+        marker = ">" if self.state.available_menu_items[self.state.menu_index] == item else " "
+        return f"{marker} {item.upper():<10} {value}"
 
     def _sync_brightness_state(self) -> None:
         status = self.power.brightness_status()
         self.state.brightness_pct = (
             int(status["brightness_pct"]) if status["brightness_pct"] is not None else None
         )
+
+    def _ensure_startup_brightness(self) -> None:
+        if self.state.brightness_pct is None:
+            return
+        if self.state.brightness_pct >= self.config.initial_brightness_pct:
+            return
+        status = self.power.set_brightness_pct(self.config.initial_brightness_pct)
+        self.state.brightness_pct = (
+            int(status["brightness_pct"]) if status["brightness_pct"] is not None else None
+        )
+        logging.info("startup brightness raised to %s%%", self.state.brightness_pct)
 
     def _enter_standby_locked(self) -> None:
         if self.state.standby:
