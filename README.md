@@ -55,6 +55,7 @@ Current default service behavior:
 
 - Top knob turn: change vibe
 - Bottom knob turn in `browse`: change channel
+- Bottom knob turn in `browse` changes program within the current vibe when that vibe only has one channel
 - Bottom knob click in `browse`: open menu carousel
 - Bottom knob turn in `menu`: move left/right between `brightness` and `timer`
 - Bottom knob click in `menu`: enter/exit edit mode for the current menu item
@@ -110,6 +111,11 @@ Relevant env knobs:
 - `PISUGAR_SOCKET_CMD`
 - `PISUGAR_SOFT_POWEROFF_ENABLED`
 - `PISUGAR_SOFT_POWEROFF_SHELL`
+- `PISUGAR_BUTTON_SINGLE_ENABLED`
+- `PISUGAR_BUTTON_DOUBLE_ENABLED`
+- `PISUGAR_BUTTON_LONG_ENABLED`
+- `PISUGAR_BUTTON_LONG_SHELL`
+- `PISUGAR_ANTI_MISTOUCH_ENABLED`
 - `PISUGAR_SAFE_SHUTDOWN_LEVEL`
 - `PISUGAR_SAFE_SHUTDOWN_DELAY`
 - `SHUTDOWN_CMD`
@@ -119,6 +125,7 @@ Relevant env knobs:
 - `CONTROL_SOCKET`
 - `STANDBY_BUTTON_PIN`
 - `STANDBY_BUTTON_ENABLED`
+- `STANDBY_BUTTON_HOLD_SECONDS`
 - `ADS1115_ENABLED`
 - `ADS1115_BUS`
 - `ADS1115_ADDRESS`

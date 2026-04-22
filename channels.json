@@ -2,54 +2,39 @@
   "vibes": [
     {
       "number": 1,
-      "name": "focus",
+      "name": "relax-lofi",
       "channels": [
         {
           "number": 1,
           "name": "study-lofi",
           "paths": [
-            "/home/tommy/crtv/local-media/focus/study-lofi"
-          ]
-        },
-        {
-          "number": 2,
-          "name": "deep-work",
-          "paths": [
-            "/home/tommy/crtv/local-media/focus/deep-work"
+            "/mnt/usb/media/lofi-chill"
           ]
         }
       ]
     },
     {
       "number": 2,
-      "name": "relax",
+      "name": "nature-sounds",
       "channels": [
         {
           "number": 1,
-          "name": "fireplace",
+          "name": "nature",
           "paths": [
-            "/mnt/usb/media/relax/fireplace"
-          ]
-        },
-        {
-          "number": 2,
-          "name": "cozy-ambience",
-          "paths": [
-            "/mnt/usb/media/relax/cozy-ambience"
+            "/mnt/usb/media/nature-sounds"
           ]
         }
       ]
     },
     {
       "number": 3,
-      "name": "meditate",
+      "name": "visuals",
       "channels": [
         {
           "number": 1,
-          "name": "calming-nature",
+          "name": "visuals",
           "paths": [
-            "/home/tommy/crtv/local-media/meditate/calming-nature",
-            "/mnt/usb/media/meditate/calming-nature"
+            "/mnt/usb/media/visuals"
           ]
         }
       ]
@@ -60,31 +45,22 @@
       "channels": [
         {
           "number": 1,
-          "name": "background-company",
+          "name": "tv",
           "paths": [
-            "/home/tommy/crtv/local-media/television/background-company",
-            "/mnt/usb/media/television/background-company"
-          ]
-        },
-        {
-          "number": 2,
-          "name": "animation",
-          "paths": [
-            "/home/tommy/crtv/local-media/television/animation",
-            "/mnt/usb/media/television/animation"
+            "/mnt/usb/media/television"
           ]
         }
       ]
     },
     {
       "number": 5,
-      "name": "chill",
+      "name": "fantasy",
       "channels": [
         {
           "number": 1,
-          "name": "chill",
+          "name": "fantasy",
           "paths": [
-            "/mnt/usb/media/chill"
+            "/mnt/usb/media/fantasy"
           ]
         }
       ]
@@ -95,29 +71,22 @@
       "channels": [
         {
           "number": 1,
-          "name": "medieval-ambiance",
-          "paths": [
-            "/home/tommy/crtv/local-media/ambience/medieval-ambiance"
-          ]
-        },
-        {
-          "number": 2,
           "name": "fantasy-rooms",
           "paths": [
-            "/mnt/usb/media/ambience/fantasy-rooms"
+            "/mnt/usb/media/ambience"
           ]
         }
       ]
     },
     {
       "number": 7,
-      "name": "nature",
+      "name": "pixel",
       "channels": [
         {
           "number": 1,
-          "name": "rivers-forest",
+          "name": "pixel",
           "paths": [
-            "/mnt/usb/media/nature/rivers-forest"
+            "/mnt/usb/media/pixel"
           ]
         }
       ]
@@ -137,34 +106,13 @@
     },
     {
       "number": 9,
-      "name": "fantasy",
+      "name": "vintage",
       "channels": [
         {
           "number": 1,
-          "name": "tavern",
+          "name": "vintage",
           "paths": [
-            "/mnt/usb/media/fantasy/tavern"
-          ]
-        },
-        {
-          "number": 2,
-          "name": "shire",
-          "paths": [
-            "/mnt/usb/media/fantasy/shire"
-          ]
-        }
-      ]
-    },
-    {
-      "number": 10,
-      "name": "mixed",
-      "channels": [
-        {
-          "number": 1,
-          "name": "curated-rotation",
-          "paths": [
-            "/home/tommy/crtv/local-media/mixed/curated-rotation",
-            "/mnt/usb/media/mixed/curated-rotation"
+            "/mnt/usb/media/vintage"
           ]
         }
       ]

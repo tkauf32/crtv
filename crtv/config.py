@@ -56,6 +56,7 @@ class AppConfig:
     bottom_encoder: EncoderPins
     standby_button_pin: int
     standby_button_enabled: bool
+    standby_button_hold_seconds: float
     button_bounce: float
     pin_bounce: float
     detent_transitions: int
@@ -89,6 +90,11 @@ class AppConfig:
     pisugar_socket_command: tuple[str, ...]
     pisugar_soft_poweroff_enabled: bool
     pisugar_soft_poweroff_shell: str
+    pisugar_button_single_enabled: bool
+    pisugar_button_double_enabled: bool
+    pisugar_button_long_enabled: bool
+    pisugar_button_long_shell: str
+    pisugar_anti_mistouch_enabled: bool
     safe_shutdown_level: int
     safe_shutdown_delay_seconds: int
     initial_volume: int
@@ -139,6 +145,9 @@ def load_config(repo_root: Path) -> AppConfig:
         standby_button_pin=int(os.environ.get("STANDBY_BUTTON_PIN", "16")),
         standby_button_enabled=_truthy(
             os.environ.get("STANDBY_BUTTON_ENABLED"), default=True
+        ),
+        standby_button_hold_seconds=float(
+            os.environ.get("STANDBY_BUTTON_HOLD_SECONDS", "1.5")
         ),
         button_bounce=float(os.environ.get("BUTTON_BOUNCE", "0.05")),
         pin_bounce=float(os.environ.get("PIN_BOUNCE", "0.001")),
@@ -198,6 +207,21 @@ def load_config(repo_root: Path) -> AppConfig:
         ),
         pisugar_soft_poweroff_shell=os.environ.get(
             "PISUGAR_SOFT_POWEROFF_SHELL", "sudo shutdown now"
+        ),
+        pisugar_button_single_enabled=_truthy(
+            os.environ.get("PISUGAR_BUTTON_SINGLE_ENABLED"), default=False
+        ),
+        pisugar_button_double_enabled=_truthy(
+            os.environ.get("PISUGAR_BUTTON_DOUBLE_ENABLED"), default=False
+        ),
+        pisugar_button_long_enabled=_truthy(
+            os.environ.get("PISUGAR_BUTTON_LONG_ENABLED"), default=True
+        ),
+        pisugar_button_long_shell=os.environ.get(
+            "PISUGAR_BUTTON_LONG_SHELL", "sudo shutdown now"
+        ),
+        pisugar_anti_mistouch_enabled=_truthy(
+            os.environ.get("PISUGAR_ANTI_MISTOUCH_ENABLED"), default=True
         ),
         safe_shutdown_level=int(os.environ.get("PISUGAR_SAFE_SHUTDOWN_LEVEL", "3")),
         safe_shutdown_delay_seconds=int(

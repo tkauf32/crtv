@@ -148,6 +148,9 @@ class MpvPlayer:
     def cycle_playlist(self, delta: int) -> None:
         self.command(["playlist-next" if delta > 0 else "playlist-prev", "force"])
 
+    def set_playlist_position(self, index: int) -> None:
+        self.command(["set_property", "playlist-pos", index])
+
     def show_text(self, text: str, duration_ms: int = 2000) -> None:
         self.command(["show-text", text, duration_ms])
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 from pathlib import Path
 
 from .models import Channel, MediaItem, Vibe
@@ -28,11 +27,10 @@ class ContentLibrary:
 
     def channel_items(self, vibe_index: int, channel_index: int) -> list[MediaItem]:
         channel = self._vibes[vibe_index].channels[channel_index]
-        items = self._collect_channel_items(channel)
-        if self._random_start and len(items) > 1:
-            offset = random.randrange(len(items))
-            return items[offset:] + items[:offset]
-        return items
+        return self._collect_channel_items(channel)
+
+    def clip_count(self, vibe_index: int, channel_index: int) -> int:
+        return len(self.channel_items(vibe_index, channel_index))
 
     def vibe_count(self) -> int:
         return len(self._vibes)
@@ -61,12 +59,10 @@ class ContentLibrary:
             if not path.is_dir():
                 continue
 
-            for child in sorted(path.iterdir()):
-                if not child.is_file():
+            for child in sorted(path.rglob("*")):
+                if not child.is_file() or child.suffix.lower() not in MEDIA_EXTENSIONS:
                     continue
-                if child.suffix.lower() not in MEDIA_EXTENSIONS:
-                    continue
-                resolved = str(child)
+                resolved = str(child.resolve())
                 if resolved in seen:
                     continue
                 items.append(MediaItem(path=resolved))

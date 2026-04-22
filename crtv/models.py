@@ -49,6 +49,7 @@ class RuntimeState:
     current_vibe_index: int = 0
     current_channel_index: int = 0
     clip_index: int = 0
+    clip_count: int = 0
     volume: int = 65
     muted: bool = False
     standby: bool = False

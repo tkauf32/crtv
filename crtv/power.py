@@ -163,6 +163,22 @@ class PowerManager:
             f"set_soft_poweroff_shell {self.config.pisugar_soft_poweroff_shell}"
         )
         self._pisugar_set(
+            f"set_button_enable single {1 if self.config.pisugar_button_single_enabled else 0}"
+        )
+        self._pisugar_set(
+            f"set_button_enable double {1 if self.config.pisugar_button_double_enabled else 0}"
+        )
+        self._pisugar_set(
+            f"set_button_enable long {1 if self.config.pisugar_button_long_enabled else 0}"
+        )
+        if self.config.pisugar_button_long_shell:
+            self._pisugar_set(
+                f"set_button_shell long {self.config.pisugar_button_long_shell}"
+            )
+        self._pisugar_set(
+            f"set_anti_mistouch {'true' if self.config.pisugar_anti_mistouch_enabled else 'false'}"
+        )
+        self._pisugar_set(
             f"set_safe_shutdown_level {self.config.safe_shutdown_level}"
         )
         self._pisugar_set(

@@ -44,6 +44,8 @@ class RotaryCallbacks:
 
 
 class RotaryEncoder:
+    TRANSITION_RESET_SECONDS = 0.05
+
     def __init__(
         self,
         name: str,
@@ -62,7 +64,9 @@ class RotaryEncoder:
         self.pin_sw = Button(pins.sw, pull_up=True, bounce_time=config.button_bounce)
         self.accumulator = 0
         self.last_ab = self._ab_value()
+        self.detent_ab = self.last_ab
         self.last_detent_time = 0.0
+        self.last_transition_time = 0.0
 
         self.pin_a.when_pressed = lambda: self._handle_ab_change()
         self.pin_a.when_released = lambda: self._handle_ab_change()
@@ -77,17 +81,21 @@ class RotaryEncoder:
         return (self._logic_level(self.pin_a) << 1) | self._logic_level(self.pin_b)
 
     def _handle_ab_change(self) -> None:
+        now = time.time()
+        if now - self.last_transition_time > self.TRANSITION_RESET_SECONDS:
+            self.accumulator = 0
         current_ab = self._ab_value()
         step = TRANSITIONS.get((self.last_ab, current_ab), 0)
         self.last_ab = current_ab
+        self.last_transition_time = now
         if step == 0:
+            self.accumulator = 0
             return
 
         self.accumulator += step
-        if abs(self.accumulator) < self.detent_transitions:
+        if current_ab != self.detent_ab or abs(self.accumulator) < self.detent_transitions:
             return
 
-        now = time.time()
         if now - self.last_detent_time < self.detent_cooldown_seconds:
             self.accumulator = 0
             return
@@ -137,6 +145,7 @@ class StandbyButton:
     POLL_SECONDS = 0.05
 
     def __init__(self, config: AppConfig, controller: "TvController"):
+        self.config = config
         if Button is None:
             raise RuntimeError("gpiozero is required on the Raspberry Pi runtime")
         self.button = Button(
@@ -150,6 +159,8 @@ class StandbyButton:
             self.button.is_pressed,
         )
         self._last_pressed = bool(self.button.is_pressed)
+        self._pressed_at = time.monotonic() if self._last_pressed else 0.0
+        self._long_press_handled = False
         self._thread = threading.Thread(
             target=self._poll,
             args=(controller,),
@@ -157,11 +168,6 @@ class StandbyButton:
             daemon=True,
         )
         self._thread.start()
-
-    @staticmethod
-    def _handle_press(controller: "TvController") -> None:
-        logging.info("standby button pressed")
-        controller.on_standby_button()
 
     @staticmethod
     def _handle_release() -> None:
@@ -173,9 +179,21 @@ class StandbyButton:
             if pressed != self._last_pressed:
                 self._last_pressed = pressed
                 if pressed:
-                    self._handle_press(controller)
+                    logging.info("standby button pressed")
+                    self._pressed_at = time.monotonic()
+                    self._long_press_handled = False
                 else:
+                    if not self._long_press_handled:
+                        controller.on_standby_button()
                     self._handle_release()
+            elif (
+                pressed
+                and not self._long_press_handled
+                and time.monotonic() - self._pressed_at >= self.config.standby_button_hold_seconds
+            ):
+                logging.info("standby button long press")
+                controller.on_standby_button_hold()
+                self._long_press_handled = True
             time.sleep(self.POLL_SECONDS)
 
 

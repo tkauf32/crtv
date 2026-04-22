@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import threading
 
 from .config import AppConfig
@@ -34,6 +35,7 @@ class TvController:
             self.player.ensure_running()
             self.player.set_volume(self.state.volume)
             self._sync_brightness_state()
+            self.state.clip_index = self._initial_clip_index_for_current_channel()
             self._play_current_channel()
 
     def enter_standby(self) -> dict[str, str | bool]:
@@ -170,17 +172,41 @@ class TvController:
                 return
             self._enter_standby_locked()
 
+    def on_standby_button_hold(self) -> None:
+        with self.lock:
+            logging.info("standby button hold: shutting down")
+            self._shutdown_device()
+
     def _move_vibe(self, delta: int) -> None:
         self.state.current_vibe_index = (self.state.current_vibe_index + delta) % self.library.vibe_count()
         self.state.current_channel_index = 0
-        self.state.clip_index = 0
+        self.state.clip_index = self._initial_clip_index_for_current_channel()
         self._play_current_channel()
 
     def _move_channel(self, delta: int) -> None:
         channel_count = self.library.channel_count(self.state.current_vibe_index)
+        if channel_count <= 1:
+            self._move_program(delta)
+            return
         self.state.current_channel_index = (self.state.current_channel_index + delta) % channel_count
-        self.state.clip_index = 0
+        self.state.clip_index = self._initial_clip_index_for_current_channel()
         self._play_current_channel()
+
+    def _move_program(self, delta: int) -> None:
+        items = self.library.channel_items(
+            self.state.current_vibe_index,
+            self.state.current_channel_index,
+        )
+        if not items:
+            self.state.clip_index = 0
+            self.state.clip_count = 0
+            self.player.show_static()
+            self._update_status("empty")
+            return
+        self.state.clip_count = len(items)
+        self.state.clip_index = (self.state.clip_index + delta) % len(items)
+        self.player.set_playlist_position(self.state.clip_index)
+        self._update_status("program")
 
     def _set_volume_locked(self, volume: int) -> None:
         self.state.volume = max(0, min(100, volume))
@@ -233,8 +259,25 @@ class TvController:
             self.state.current_vibe_index,
             self.state.current_channel_index,
         )
+        self.state.clip_count = len(items)
+        if items:
+            self.state.clip_index = max(0, min(self.state.clip_index, len(items) - 1))
+        else:
+            self.state.clip_index = 0
         self.player.set_playlist(items, start_index=self.state.clip_index)
         self._update_status()
+
+    def _initial_clip_index_for_current_channel(self) -> int:
+        items = self.library.channel_items(
+            self.state.current_vibe_index,
+            self.state.current_channel_index,
+        )
+        if len(items) <= 1 or not self.config.auto_random_start:
+            return 0
+        lower = max(0, min(100, self.config.random_start_min_pct))
+        upper = max(lower, min(100, self.config.random_start_max_pct))
+        start_pct = random.randint(lower, upper)
+        return min(len(items) - 1, round((start_pct / 100) * (len(items) - 1)))
 
     def _update_status(self, prefix: str | None = None) -> None:
         vibe = self.library.vibes[self.state.current_vibe_index]
@@ -245,6 +288,8 @@ class TvController:
         parts.append(f"mode={self.state.mode.value}")
         parts.append(f"vibe={vibe.number}:{vibe.name}")
         parts.append(f"channel={channel.number}:{channel.name}")
+        if self.state.clip_count > 0:
+            parts.append(f"program={self.state.clip_index + 1}/{self.state.clip_count}")
         parts.append(f"volume={self.state.volume}")
         if self.state.brightness_pct is not None:
             parts.append(f"brightness={self.state.brightness_pct}")
