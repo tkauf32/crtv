@@ -44,8 +44,6 @@ class RotaryCallbacks:
 
 
 class RotaryEncoder:
-    TRANSITION_RESET_SECONDS = 0.05
-
     def __init__(
         self,
         name: str,
@@ -65,7 +63,6 @@ class RotaryEncoder:
         self.accumulator = 0
         self.last_ab = self._ab_value()
         self.last_detent_time = 0.0
-        self.last_transition_time = 0.0
 
         self.pin_a.when_pressed = lambda: self._handle_ab_change()
         self.pin_a.when_released = lambda: self._handle_ab_change()
@@ -80,24 +77,17 @@ class RotaryEncoder:
         return (self._logic_level(self.pin_a) << 1) | self._logic_level(self.pin_b)
 
     def _handle_ab_change(self) -> None:
-        now = time.monotonic()
-        if now - self.last_transition_time > self.TRANSITION_RESET_SECONDS:
-            self.accumulator = 0
         current_ab = self._ab_value()
         step = TRANSITIONS.get((self.last_ab, current_ab), 0)
         self.last_ab = current_ab
-        self.last_transition_time = now
         if step == 0:
-            self.accumulator = 0
             return
 
-        if self.accumulator and (self.accumulator > 0) != (step > 0):
-            self.accumulator = step
-        else:
-            self.accumulator += step
+        self.accumulator += step
         if abs(self.accumulator) < self.detent_transitions:
             return
 
+        now = time.time()
         if now - self.last_detent_time < self.detent_cooldown_seconds:
             self.accumulator = 0
             return
