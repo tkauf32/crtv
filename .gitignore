@@ -2,3 +2,4 @@ local-videos/
 */.env
 .env
 logs/
+!system-files/**/*.env
