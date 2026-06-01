@@ -1,0 +1,22 @@
+● crtv.service - CRTV Mini TV Service
+     Loaded: loaded (/etc/systemd/system/crtv.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-05-30 18:41:30 CDT; 1 day 20h ago
+ Invocation: 1c917f3d39e34427b1d087b5a61aaedd
+    Process: 956 ExecStartPre=/usr/bin/mkdir -p /home/tommy/crtv/logs (code=exited, status=0/SUCCESS)
+   Main PID: 960 (python3)
+      Tasks: 47 (limit: 3925)
+        CPU: 57min 19.429s
+     CGroup: /system.slice/crtv.service
+             ├─ 960 /usr/bin/python3 -m crtv.app
+             └─1050 mpv --input-ipc-server=/tmp/tv.sock --profile=crt-lottes --vo=gpu --gpu-context=x11egl "--hwdec=drm-copy # this works for office just fine." --fullscreen --idle=yes --force-window=yes --keep-open=no --cache=yes --gapless-audio=weak --prefetch-playlist=yes --audio-display=no --osc=no --osd-align-x=center --osd-align-y=center --osd-font-size=24 --keepaspect=no --log-file=/home/tommy/crtv/logs/mpv.log "--af=lavfi=[highpass=f=120]" --vf=scale=-2:240:flags=bilinear
+
+Jun 01 15:04:54 raspberrypi python3[960]: 2026-06-01 15:04:54,917 INFO ads1115 sample raw=0 pct=None range=0..5
+Jun 01 15:05:00 raspberrypi python3[960]: 2026-06-01 15:05:00,011 INFO ads1115 sample raw=0 pct=None range=0..5
+Jun 01 15:05:05 raspberrypi python3[960]: 2026-06-01 15:05:05,107 INFO ads1115 sample raw=0 pct=None range=0..5
+Jun 01 15:05:10 raspberrypi python3[960]: 2026-06-01 15:05:10,203 INFO ads1115 sample raw=0 pct=None range=0..5
+Jun 01 15:05:15 raspberrypi python3[960]: 2026-06-01 15:05:15,297 INFO ads1115 sample raw=0 pct=None range=0..5
+Jun 01 15:05:20 raspberrypi python3[960]: 2026-06-01 15:05:20,389 INFO ads1115 sample raw=0 pct=None range=0..5
+Jun 01 15:05:25 raspberrypi python3[960]: 2026-06-01 15:05:25,479 INFO ads1115 sample raw=0 pct=None range=0..5
+Jun 01 15:05:30 raspberrypi python3[960]: 2026-06-01 15:05:30,570 INFO ads1115 sample raw=0 pct=None range=0..5
+Jun 01 15:05:35 raspberrypi python3[960]: 2026-06-01 15:05:35,661 INFO ads1115 sample raw=0 pct=None range=0..5
+Jun 01 15:05:40 raspberrypi python3[960]: 2026-06-01 15:05:40,754 INFO ads1115 sample raw=0 pct=None range=0..5

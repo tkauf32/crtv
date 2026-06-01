@@ -1,0 +1,53 @@
+== CRTV runtime audit ==
+repo=/home/tommy/crtv
+channels=/home/tommy/crtv/channels.json
+static=/home/tommy/crtv/assets/static.mp4
+display=<unset>
+xauthority=/home/tommy/.Xauthority
+tv_sock=/tmp/crt_player.sock
+control_socket=/tmp/crtv-control.sock
+
+== Required commands ==
+PASS command python3: /usr/bin/python3
+PASS command mpv: /usr/bin/mpv
+PASS command amixer: /usr/bin/amixer
+PASS command nc: /usr/bin/nc
+
+== Optional diagnostics ==
+PASS optional command vcgencmd: /usr/bin/vcgencmd
+PASS optional command systemctl: /usr/bin/systemctl
+PASS optional command i2cdetect: /usr/sbin/i2cdetect
+PASS optional command raspi-config: /usr/bin/raspi-config
+
+== Python modules ==
+PASS python module gpiozero
+PASS python module smbus2
+WARN python module smbus unavailable
+
+== Repo files ==
+PASS channels file: /home/tommy/crtv/channels.json
+PASS static file: /home/tommy/crtv/assets/static.mp4
+PASS service entrypoint: /home/tommy/crtv/crtv_service.py
+PASS systemd unit template: /home/tommy/crtv/deploy/crtv.service
+
+== Media paths from channels.json ==
+PASS media path /mnt/usb/media/lofi-chill
+PASS media path /mnt/usb/media/nature-sounds
+PASS media path /mnt/usb/media/visuals
+PASS media path /mnt/usb/media/television
+PASS media path /mnt/usb/media/fantasy
+PASS media path /mnt/usb/media/ambience
+PASS media path /mnt/usb/media/pixel
+PASS media path /home/tommy/crtv/local-media/music/local-mixes
+PASS media path /mnt/usb/media/vintage
+
+== Display environment ==
+WARN DISPLAY unset; X11 mpv defaults may not work
+PASS XAUTHORITY file present
+PASS /sys/class/backlight present
+
+== I2C / GPIO hints ==
+PASS /dev/i2c-1 present
+PASS current user is in gpio group
+
+Audit complete.

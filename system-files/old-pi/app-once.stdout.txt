@@ -1,0 +1,6 @@
+2026-06-01 15:06:21,300 INFO alsa master volume normalized to 100%
+2026-06-01 15:06:22,368 INFO crtv service started: mode=browse vibe=1:relax-lofi channel=1:study-lofi program=39/54 volume=90 brightness=35 battery=battery: 78.859085 plugged=battery_power_plugged: true
+2026-06-01 15:06:22,368 INFO battery integration: model=model: PiSugar 3 battery=battery: 78.859085 battery_v=battery_v: 3.8169007 plugged=battery_power_plugged: true allow_charging=battery_allow_charging: true output=battery_output_enabled: true temp=temperature: 53
+2026-06-01 15:06:22,371 INFO controls: top knob turn=vibe
+2026-06-01 15:06:22,371 INFO controls: bottom knob turn=channel in browse, menu nav/edit in menu; bottom knob click=open menu and toggle edit
+2026-06-01 15:06:22,371 INFO controls: standby button gpio=16; acts as back in menu

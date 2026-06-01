@@ -1,0 +1,68 @@
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/gpiozero/pins/pi.py", line 411, in pin
+    pin = self.pins[info]
+          ~~~~~~~~~^^^^^^
+KeyError: PinInfo(number=11, name='GPIO17', names=frozenset({'WPI0', 17, 'GPIO17', 'J8:11', 'BCM17', '17', 'BOARD11'}), pull='', row=6, col=1, interfaces=frozenset({'gpio', '', 'uart', 'spi', 'dpi'}))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/tommy/crtv/crtv/app.py", line 133, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/tommy/crtv/crtv/app.py", line 82, in main
+    input_router = InputRouter(config, controller)
+  File "/home/tommy/crtv/crtv/input.py", line 108, in __init__
+    self.left = RotaryEncoder(
+                ~~~~~~~~~~~~~^
+        name="top",
+        ^^^^^^^^^^^
+    ...<6 lines>...
+        ),
+        ^^
+    )
+    ^
+  File "/home/tommy/crtv/crtv/input.py", line 60, in __init__
+    self.pin_a = Button(pins.a, pull_up=True, bounce_time=config.pin_bounce)
+                 ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/gpiozero/devices.py", line 108, in __call__
+    self = super().__call__(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/gpiozero/input_devices.py", line 412, in __init__
+    super().__init__(
+    ~~~~~~~~~~~~~~~~^
+        pin, pull_up=pull_up, active_state=active_state,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        bounce_time=bounce_time, pin_factory=pin_factory)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/gpiozero/mixins.py", line 417, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/gpiozero/input_devices.py", line 162, in __init__
+    super().__init__(
+    ~~~~~~~~~~~~~~~~^
+        pin, pull_up=pull_up, active_state=active_state,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pin_factory=pin_factory)
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/gpiozero/mixins.py", line 243, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/gpiozero/input_devices.py", line 79, in __init__
+    super().__init__(pin, pin_factory=pin_factory)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/gpiozero/devices.py", line 553, in __init__
+    pin = self.pin_factory.pin(pin)
+  File "/usr/lib/python3/dist-packages/gpiozero/pins/pi.py", line 413, in pin
+    pin = self.pin_class(self, info)
+  File "/usr/lib/python3/dist-packages/gpiozero/pins/lgpio.py", line 126, in __init__
+    lgpio.gpio_claim_input(
+    ~~~~~~~~~~~~~~~~~~~~~~^
+        self.factory._handle, self._number, lgpio.SET_PULL_NONE)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/lgpio.py", line 755, in gpio_claim_input
+    return _u2i(_lgpio._gpio_claim_input(handle&0xffff, lFlags, gpio))
+  File "/usr/lib/python3/dist-packages/lgpio.py", line 458, in _u2i
+    raise error(error_text(v))
+lgpio.error: 'GPIO busy'
