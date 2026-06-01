@@ -91,6 +91,8 @@ The new library layer is offline-first. Remote/streaming sources remain supporte
 
 See [`docs/architecture.md`](/Users/tomkaufmann/crtv/docs/architecture.md) for preserve-vs-replace decisions, target architecture, and phased migration.
 
+For cross-Pi deployment and rebuild strategy, see [`docs/pi-migration.md`](/Users/tomkaufmann/crtv/docs/pi-migration.md). A local runtime audit helper is available at `./scripts/audit-runtime.sh`.
+
 Legacy scripts remain in the repo only as reference and fallback during migration.
 
 ## PiSugar
