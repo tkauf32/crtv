@@ -291,7 +291,12 @@ class MpvPlayer:
                 continue
             if track_type != "video":
                 continue
-            if raw_track.get("attached-picture") or raw_track.get("attached_picture"):
+            if (
+                raw_track.get("attached-picture")
+                or raw_track.get("attached_picture")
+                or raw_track.get("albumart")
+                or raw_track.get("image")
+            ):
                 has_attached_picture = True
             else:
                 has_regular_video = True
