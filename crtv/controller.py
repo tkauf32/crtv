@@ -238,8 +238,8 @@ class TvController:
             return
         self.state.mode = UiMode.BROWSE
         self.player.set_osd_font_size(self.DEFAULT_OSD_FONT_SIZE)
-        self.player.clear_text()
         self._update_status("menu-close")
+        self.player.restore_now_playing_overlay()
 
     def _adjust_menu_value(self, delta: int) -> None:
         item = self.state.available_menu_items[self.state.menu_index]
@@ -311,7 +311,7 @@ class TvController:
     def _update_osd(self, prefix: str | None = None) -> None:
         if self.state.mode != UiMode.MENU:
             return
-        self.player.show_text(self._render_menu_osd(prefix), duration_ms=4000)
+        self.player.show_menu_text(self._render_menu_osd(prefix), duration_ms=4000)
 
     def _render_menu_osd(self, prefix: str | None = None) -> str:
         current_item = self.state.available_menu_items[self.state.menu_index]
@@ -376,6 +376,7 @@ class TvController:
     def _exit_standby_locked(self, prefix: str | None = None) -> None:
         if not self.state.standby:
             self._update_status(prefix)
+            self.player.restore_now_playing_overlay()
             return
         logging.info("exiting standby")
         self.power.exit_low_power_mode()
@@ -390,6 +391,7 @@ class TvController:
         self.state.standby = False
         self.state.power_save = False
         self._update_status(prefix)
+        self.player.restore_now_playing_overlay()
 
     def _shutdown_device(self) -> None:
         self.player.pause()

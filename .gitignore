@@ -3,3 +3,4 @@ local-videos/
 .env
 logs/
 !system-files/**/*.env
+crtv/__pycache__/*
