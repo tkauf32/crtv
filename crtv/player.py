@@ -49,7 +49,7 @@ class MpvPlayer:
             "--cache=yes",
             "--gapless-audio=weak",
             "--prefetch-playlist=yes",
-            "--audio-display=no",
+            "--audio-display=embedded-first",
             "--osc=no",
             "--osd-align-x=center",
             "--osd-align-y=center",

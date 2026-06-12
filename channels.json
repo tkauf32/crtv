@@ -99,7 +99,8 @@
           "number": 1,
           "name": "local-mixes",
           "paths": [
-            "/home/tommy/crtv/local-media/music/local-mixes"
+            "/home/tommy/crtv/local-media/music/local-mixes",
+            "/mnt/music"
           ]
         }
       ]

@@ -5,16 +5,22 @@ from pathlib import Path
 from .models import Channel, MediaItem, Vibe
 
 MEDIA_EXTENSIONS = {
-    ".mp4",
-    ".m4v",
-    ".mkv",
-    ".avi",
-    ".mov",
-    ".webm",
-    ".mpg",
-    ".mpeg",
+      ".mp4",
+      ".m4v",
+      ".mkv",
+      ".avi",
+      ".mov",
+      ".webm",
+      ".mpg",
+      ".mpeg",
+      ".mp3",
+      ".flac",
+      ".m4a",
+      ".wav",
+      ".ogg",
+      ".opus",
+      ".aac",
 }
-
 
 class ContentLibrary:
     def __init__(self, vibes: list[Vibe], random_start: bool = False):
